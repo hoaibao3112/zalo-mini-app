@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #F3F4F6; /* gray-100, for desktop background */
+  display: flex;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  width: 100%;
+  max-width: 414px; /* Simulate iPhone screen */
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background-color: #FAFAFA; /* brand-cream */
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* Ẩn scrollbar cho mượt */
+::-webkit-scrollbar {
+    width: 0px;
+    background: transparent;
+}

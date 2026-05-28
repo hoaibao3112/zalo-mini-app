@@ -1,0 +1,27 @@
+{
+  "app": {
+    "id": "1458438785496833940",
+    "title": "Aizen",
+    "headerTitle": "",
+    "headerColor": "#FFFFFF",
+    "textColor": "black",
+    "leftButton": "none",
+    "rightButton": "none",
+    "statusBar": "transparent",
+    "actionBarHidden": true,
+    "hideAndroidBottomNavigationBar": true,
+    "hideIOSSafeAreaBottom": false,
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": ""
+  },
+  "permissions": [
+    "scope.userInfo",
+    "scope.userPhonenumber"
+  ],
+  "listCSS": ["assets/index.css"],
+  "listSyncJS": [
+    "assets/index.js"
+  ],
+  "listAsyncJS": []
+}

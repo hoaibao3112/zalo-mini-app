@@ -1,0 +1,12 @@
+{
+  "name": "Aizen",
+  "framework": "react-typescript",
+  "cssPreProcessor": "tailwind",
+  "includeTailwind": true,
+  "package": "zmp-ui",
+  "stateManagement": "react",
+  "newProject": true,
+  "template": "single-view",
+  "outputFolder": "dist",
+  "buildType": "vite"
+}
