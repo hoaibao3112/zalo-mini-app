@@ -3,7 +3,8 @@ import * as zmpSdk from 'zmp-sdk';
 import { useNavigate } from 'react-router-dom';
 import { api, getMediaUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Gift, Star, ChevronRight, X, Phone, User } from 'lucide-react';
+import { useCart } from '../context/CartContext';
+import { Gift, Star, ChevronRight, X, Phone, User, ShoppingCart } from 'lucide-react';
 import { EcomOrderConfirm } from '../components/EcomOrderConfirm';
 import type { EcomProduct } from '../types/ecom';
 interface SpinPrize {
@@ -75,6 +76,7 @@ interface SpinReward {
 export function SpinGamePage() {
     const navigate = useNavigate();
     const { user, isLoggedIn, login, isLoading: authLoading } = useAuth();
+    const { addToCart } = useCart();
     const [game, setGame] = useState<SpinGame | null>(null);
     const [loading, setLoading] = useState(true);
     const [spinning, setSpinning] = useState(false);
@@ -478,6 +480,47 @@ export function SpinGamePage() {
             setSpinning(false);
         }
     }
+
+    const handleClaimRewardToCart = () => {
+        if (!result) return;
+        
+        if (result.rewardType === 'NHANH_PRODUCT' || result.rewardType === 'HARAVAN_PRODUCT') {
+            const platformName = result.rewardType === 'NHANH_PRODUCT' ? 'NHANH' : 'HARAVAN';
+            
+            const cartItem = {
+                id: String(result.ecomProductId || `reward_${Date.now()}`),
+                externalId: result.ecomProductId ? Number(result.ecomProductId) : undefined,
+                name: `🎁 [QUÀ TẶNG] ${result.name}`,
+                description: `Quà tặng E-commerce từ Vòng Quay May Mắn`,
+                price: 0, 
+                salePrice: 0,
+                image: result.imageUrl || 'https://placehold.co/150x150?text=Qua+Tang',
+                categoryId: 'ecom_rewards',
+                cartId: `reward-${result.id}-${Date.now()}`,
+                quantity: 1,
+                size: 'M' as const,
+                milkLevel: 50,
+                platform: platformName as 'NHANH' | 'HARAVAN'
+            };
+            
+            addToCart(cartItem as any);
+            setShowResult(false);
+            
+            alert(`🎉 Đã thêm quà tặng "${result.name}" vào Giỏ Hàng của bạn với giá 0đ!`);
+            navigate('/cart');
+        } else {
+            if (result.value) {
+                try {
+                    navigator.clipboard.writeText(result.value);
+                    alert(`🎉 Đã tự động sao chép mã ưu đãi: ${result.value}\nBạn hãy dán mã giảm giá này khi điền thông tin đơn hàng nhé!`);
+                } catch (e) {
+                    console.error('Failed to copy', e);
+                }
+            }
+            setShowResult(false);
+            navigate('/cart');
+        }
+    };
 
     if (loading || authLoading) {
         return (
@@ -1071,19 +1114,17 @@ export function SpinGamePage() {
                                     </div>
 
                                     <button
-                                        onClick={() => {
-                                            if (result.rewardType === 'NHANH_PRODUCT' || result.rewardType === 'HARAVAN_PRODUCT') {
-                                                setShowEcomForm(true);
-                                                setShowResult(false);
-                                            } else {
-                                                setShowResult(false);
-                                            }
-                                        }}
+                                        onClick={handleClaimRewardToCart}
                                         className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl font-bold text-lg shadow-xl shadow-orange-500/30 hover:shadow-orange-500/50 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 group relative overflow-hidden"
                                         style={game.design?.textColor ? { backgroundColor: game.design.textColor, backgroundImage: 'none' } : {}}
                                     >
                                         <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                                        <span className="relative z-10">{game.design?.closeButtonText || 'Nhận Thưởng Ngay'}</span>
+                                        <ShoppingCart className="w-5 h-5 relative z-10" />
+                                        <span className="relative z-10">
+                                            {result.rewardType === 'NHANH_PRODUCT' || result.rewardType === 'HARAVAN_PRODUCT' 
+                                                ? 'Nạp Vào Giỏ Hàng 🛒' 
+                                                : (game.design?.closeButtonText || 'Nhận Thưởng Ngay')}
+                                        </span>
                                         <ChevronRight className="w-5 h-5 relative z-10 group-hover:translate-x-1 transition-transform" />
                                     </button>
                                 </div>

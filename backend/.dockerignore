@@ -1,0 +1,38 @@
+# =========================================================================
+# .dockerignore - Tối ưu hóa kích thước Build Context của Docker
+# =========================================================================
+
+# 1. LOẠI BỎ: Các thư mục và file rác của môi trường phát triển (Dev rác)
+node_modules/       # Node.js sẽ tự cài đặt lại node_modules trong container deps stage
+dist/               # Không copy folder build cũ, build sẽ tự động chạy trong container builder stage
+.git/               # Loại bỏ toàn bộ lịch sử Git để giảm 90% dung lượng Context gửi lên Daemon
+.github/            # Loại bỏ workflows CI/CD không cần thiết trong runtime container
+.gemini/            # Loại bỏ các folder cache của AI Assistant
+.vscode/            # Loại bỏ cấu hình VS Code cá nhân
+.idea/              # Loại bỏ cấu hình WebStorm/IntelliJ
+
+# 2. LOẠI BỎ: Các tệp tin log và báo cáo thử nghiệm
+*.log               # Không mang theo file log rác
+npm-debug.log*      # Loại bỏ log lỗi của npm
+yarn-debug.log*     # Loại bỏ log lỗi của yarn
+pnpm-debug.log*     # Loại bỏ log lỗi của pnpm
+coverage/           # Loại bỏ các báo cáo test coverage
+**/*.spec.ts        # Loại bỏ các file unit test
+**/*.test.ts        # Loại bỏ các file integration test
+**/*.spec.js        # Loại bỏ file spec biên dịch
+**/*.test.js        # Loại bỏ file test biên dịch
+
+# 3. LOẠI BỎ: Các tài liệu hướng dẫn và file môi trường cục bộ
+*.md                # Loại bỏ các file tài liệu Markdown không cần trong runtime
+.env                # Tránh rò rỉ dữ liệu bảo mật (Env sẽ truyền qua Docker Compose / K8s)
+.env.local
+.env.development
+.env.test
+.env.production
+.DS_Store           # Loại bỏ file hệ thống macOS rác
+Thumbs.db           # Loại bỏ file hệ thống Windows rác
+
+# 4. GIỮ LẠI: Các tệp cấu hình môi trường mẫu mẫu và database migrations
+! .env.example       # Giữ lại tệp tin hướng dẫn môi trường mẫu
+! prisma/schema.prisma  # GIỮ LẠI: Prisma schema cực kỳ quan trọng để sinh Client trong container
+! prisma/migrations/    # GIỮ LẠI: Toàn bộ lịch sử migration để chạy npx prisma migrate deploy khi startup

@@ -51,3 +51,13 @@ out/
 # Operating System Files
 Thumbs.db
 ehthumbs.db
+
+# Frontend build artifacts and local files
+/frontend/dist.css
+/frontend/www/assets/
+/frontend/node_modules/
+/frontend/.env
+/frontend/.env.*
+
+# If frontend www assets are produced by CI, consider ignoring them and publishing as artifacts
+# /frontend/www/

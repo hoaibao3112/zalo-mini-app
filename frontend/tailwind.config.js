@@ -15,8 +15,11 @@ export default {
       colors: {
         brand: {
           primary: '#FF6B00',
+          coffee: '#5F3D2E',       // Roasted Coffee Brown
+          coffeeLight: '#8D6E63',  // Light coffee brown
+          coffeeGold: '#C89C76',   // Golden warm coffee
           dark: '#1C1917', // Neutral dark
-          cream: '#FAFAFA', // Soft gray-white
+          cream: '#FDFBF7', // Creamy beige background (from mockups)
           soft: '#FFFFFF',
           gray: '#F5F5F5',
           light: '#FFF0E6' // Tinted orange for soft backgrounds

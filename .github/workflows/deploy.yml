@@ -1,0 +1,114 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: hoaibao3112/zalo-mini-app-backend
+  IMAGE_NAME_WORKER: hoaibao3112/zalo-mini-app-worker
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Short Git SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:sha-${{ steps.vars.outputs.sha_short }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push Worker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.worker
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:sha-${{ steps.vars.outputs.sha_short }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+    outputs:
+      sha_short: ${{ steps.vars.outputs.sha_short }}
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/zalo-mini-app
+            
+            # Đăng nhập GHCR
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Gán tag image cần pull
+            export API_IMAGE_TAG="sha-${{ needs.build-push.outputs.sha_short }}"
+            export WORKER_IMAGE_TAG="sha-${{ needs.build-push.outputs.sha_short }}"
+
+            # Pull các images mới về máy
+            docker compose -f docker-compose.prod.yml pull backend-1 backend-2 worker
+
+            # Thực hiện database migration (Prisma)
+            docker compose -f docker-compose.prod.yml run --rm backend-1 npx prisma migrate deploy
+
+            # Rolling Restart Zero-Downtime
+            # Restart backend-1 trước
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate backend-1
+            
+            # Chờ 15 giây để backend-1 kịp khởi động và healthcheck pass
+            echo "Waiting 15 seconds for backend-1 to become healthy..."
+            sleep 15
+            
+            # Restart backend-2
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate backend-2
+            
+            # Restart worker
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate worker
+
+            # Dọn dẹp các images thừa không sử dụng
+            docker image prune -f
+            
+            echo "✅ Hardened Production Zero-Downtime Deploy Succeeded!"
+
+            # Shared with other projects — do not rename
+            # DATABASE_URL, REDIS_URL, ZALO_APP_ID, ZALO_APP_SECRET, NHANH_APP_ID, NHANH_SECRET_KEY, HARAVAN_APP_ID, HARAVAN_APP_SECRET

@@ -1,0 +1,1142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id               String                @id @default(uuid())
+  email            String                @unique
+  passwordHash     String
+  name             String
+  isVerified       Boolean               @default(false)
+  isActive         Boolean               @default(true)
+  zaloAppId        String?
+  zaloAppSecret    String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  inviteCode       String?               @unique
+  maxMembers       Int                   @default(1)
+  teamName         String?
+  tier             String                @default("FREE")
+  role             String                @default("USER")
+  tierExpiresAt    DateTime?
+  memberships      AccountMember[]       @relation("UserMemberships")
+  members          AccountMember[]       @relation("WorkspaceMembers")
+  categories       Category[]
+  customers        Customer[]
+  customerGroups   CustomerGroup[]
+  gameSessions     GameSession[]
+  orders           Order[]
+  popups           Popup[]
+  products         Product[]
+  playCreditRules  PlayCreditRule[]
+  games            Game[]
+  voucherTemplates VoucherCardTemplate[]
+  zaloOAs          ZaloOA[]
+  aiConfigs        AIConfig[]
+  attributeConfigs AttributeConfig[]
+  AutomationRule   AutomationRule[]
+  FacebookPage     FacebookPage[]
+  haravanConfig    HaravanConfig?
+  nhanhConfig      NhanhConfig?
+  notifications    Notification[]
+  paymentRequests  PaymentRequest[]
+  tags             Tag[]
+  telegramBots     TelegramBot[]
+  usage            WorkspaceUsage?
+  zbsTopupRequests ZbsTopupRequest[]
+}
+
+model SystemLog {
+  id        String   @id @default(uuid())
+  action    String
+  target    String?
+  details   String?
+  adminId   String
+  createdAt DateTime @default(now())
+}
+
+model AccountMember {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String   @default("MEMBER")
+  status      String   @default("ACTIVE")
+  joinedAt    DateTime @default(now())
+  user        Account  @relation("UserMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Account  @relation("WorkspaceMembers", fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+model OtpVerification {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  type      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, type])
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ipAddress String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  accountId String
+  name      String
+  image     String?
+  priority  Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@index([accountId])
+}
+
+model Product {
+  id                String             @id @default(uuid())
+  accountId         String
+  name              String
+  description       String?
+  price             Float
+  salePrice         Float?
+  image             String
+  categoryId        String
+  priority          Int                @default(0)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  externalProductId String?
+  reservedQuantity  Int                @default(0)
+  stock             Int                @default(0)
+  account           Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category          Category           @relation(fields: [categoryId], references: [id])
+  reservations      StockReservation[]
+
+  @@unique([accountId, externalProductId])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([accountId, isActive])
+}
+
+model Customer {
+  id             String             @id @default(uuid())
+  accountId      String
+  zaloId         String?
+  zaloOaId       String?
+  name           String
+  avatar         String?
+  phone          String?
+  gender         Int?
+  birthday       String?
+  source         String             @default("MINIAPP")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  facebookId     String?
+  address        String?
+  city           String?
+  district       String?
+  ward           String?
+  telegramId     String?
+  attributes     Json?              @default("{}")
+  account        Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  playerCredits  GamePlayerCredit[]
+  gameSessions   GameSession[]
+  orders         Order[]
+  playCredit     PlayCredit?
+  playCreditLogs PlayCreditLog[]
+  playHistory    PlayHistory[]
+  playRewards    PlayReward[]
+  AutomationLog  AutomationLog[]
+  groups         CustomerGroup[]    @relation("CustomerToGroup")
+  tags           Tag[]              @relation("CustomerToTag")
+
+  @@unique([accountId, zaloId])
+  @@unique([accountId, zaloOaId])
+  @@unique([accountId, facebookId])
+  @@unique([accountId, telegramId])
+  @@index([accountId])
+  @@index([accountId, source])
+  @@index([name])
+  @@index([phone])
+}
+
+model Tag {
+  id              String           @id @default(uuid())
+  accountId       String
+  name            String
+  color           String?          @default("#3b82f6")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  automationRules AutomationRule[] @relation("AutomationRuleToTag")
+  customers       Customer[]       @relation("CustomerToTag")
+
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@map("tags")
+}
+
+model CustomerGroup {
+  id              String           @id @default(uuid())
+  accountId       String
+  name            String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  automationRules AutomationRule[]
+  customers       Customer[]       @relation("CustomerToGroup")
+
+  @@index([accountId])
+}
+
+model Order {
+  id              String   @id @default(uuid())
+  accountId       String
+  customerId      String
+  items           String
+  total           Float
+  status          String   @default("pending")
+  createdAt       DateTime @default(now())
+  errorMessage    String?
+  externalOrderId String?
+  idempotencyKey  String?  @unique
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customer        Customer @relation(fields: [customerId], references: [id])
+
+  @@index([accountId])
+  @@index([customerId])
+  @@index([accountId, status])
+  @@index([accountId, createdAt])
+  @@index([externalOrderId])
+}
+
+model Game {
+  id                     String             @id @default(uuid())
+  accountId              String
+  name                   String
+  gameType               String             @default("SPIN")
+  isActive               Boolean            @default(true)
+  wheelImage             String?
+  buttonImage            String?
+  backgroundImage        String?
+  animationStyle         String?
+  initialSpins           Int                @default(1)
+  dailyBonus             Int                @default(0)
+  dailyBonusAccumulates  Boolean            @default(false)
+  maxTotalSpins          Int?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  design                 Json?
+  scenarioId             String?
+  views                  Int                @default(0)
+  onCompleteScenarioId   String?
+  onCompleteTagId        String?
+  onStartDelayMinutes    Int                @default(0)
+  onStartScenarioId      String?
+  onStartTagId           String?
+  onCompleteMessage      String?
+  sendRewardNotification Boolean            @default(true)
+  onCompleteTagAction    String             @default("ADD")
+  onStartTagAction       String             @default("ADD")
+  savePrizeToVar         String?
+  saveVoucherToVar       String?
+  sendVoucherCard        Boolean            @default(true)
+  voucherCardTemplate    Json?
+  playerCredits          GamePlayerCredit[]
+  gameSessions           GameSession[]
+  account                Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  history                PlayHistory[]
+  prizes                 GamePrize[]
+  rewards                PlayReward[]
+
+  @@index([accountId])
+  @@index([accountId, isActive])
+  @@map("SpinGame")
+}
+
+model GamePrize {
+  id                  String        @id @default(uuid())
+  gameId              String
+  name                String
+  probability         Float
+  rewardType          String        @default("TEXT")
+  value               String?
+  imageUrl            String?
+  color               String?
+  maxQuantity         Int?
+  quantityUsed        Int           @default(0)
+  slotIndex           Int?          @default(1)
+  messageTemplate     String?
+  tagAction           String?       @default("ADD")
+  tagId               String?
+  voucherCardTemplate Json?
+  vouchers            GameVoucher[]
+  game                Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("SpinPrize")
+}
+
+model VoucherCardTemplate {
+  id          String   @id @default(uuid())
+  accountId   String
+  name        String
+  description String?
+  template    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("VoucherCardTemplate")
+}
+
+model GameVoucher {
+  id            String      @id @default(uuid())
+  prizeId       String
+  code          String
+  isDistributed Boolean     @default(false)
+  distributedAt DateTime?
+  playRewardId  String?     @unique
+  createdAt     DateTime    @default(now())
+  playReward    PlayReward? @relation(fields: [playRewardId], references: [id])
+  prize         GamePrize   @relation(fields: [prizeId], references: [id], onDelete: Cascade)
+
+  @@unique([prizeId, code])
+  @@index([prizeId, isDistributed])
+}
+
+model PlayHistory {
+  id         String   @id @default(uuid())
+  gameId     String
+  customerId String
+  prize      String
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id])
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([gameId, createdAt])
+  @@map("SpinHistory")
+}
+
+model Popup {
+  id        String   @id @default(uuid())
+  accountId String
+  title     String
+  image     String
+  linkType  String?
+  linkValue String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model PlayCredit {
+  id          String   @id @default(uuid())
+  customerId  String   @unique
+  balance     Int      @default(0)
+  totalEarned Int      @default(0)
+  totalUsed   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@map("SpinCredit")
+}
+
+model PlayCreditLog {
+  id         String   @id @default(uuid())
+  customerId String
+  amount     Int
+  type       String
+  reference  String?
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("SpinCreditLog")
+}
+
+model PlayReward {
+  id                 String       @id @default(uuid())
+  customerId         String
+  gameId             String
+  prizeId            String?
+  prizeName          String
+  prizeValue         String?
+  status             String       @default("PENDING")
+  usedAt             DateTime?
+  expiresAt          DateTime?
+  requiresCollection Boolean      @default(false)
+  collectionPhone    String?
+  collectionAddress  String?
+  collectionNote     String?
+  collectionDone     Boolean      @default(false)
+  voucherCode        String?
+  createdAt          DateTime     @default(now())
+  voucher            GameVoucher?
+  customer           Customer     @relation(fields: [customerId], references: [id])
+  game               Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@index([status])
+  @@index([customerId])
+  @@index([customerId, status, createdAt])
+  @@map("SpinReward")
+}
+
+model GamePlayerCredit {
+  id               String    @id @default(uuid())
+  customerId       String
+  gameId           String
+  balance          Int       @default(0)
+  totalEarned      Int       @default(0)
+  totalUsed        Int       @default(0)
+  lastDailyBonusAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  customer         Customer  @relation(fields: [customerId], references: [id])
+  game             Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, gameId])
+  @@index([customerId])
+  @@index([gameId])
+}
+
+model GameSession {
+  id             String    @id @default(uuid())
+  token          String    @unique
+  gameId         String
+  accountId      String
+  platform       String    @default("ZALO_OA")
+  zaloId         String?
+  oaId           String?
+  externalUserId String?
+  playerName     String?
+  playerAvatar   String?
+  customerId     String?
+  maxSpins       Int       @default(1)
+  spinsUsed      Int       @default(0)
+  prizeWon       String?
+  prizeId        String?
+  prizeValue     String?
+  rewardSent     Boolean   @default(false)
+  status         String    @default("PENDING")
+  expiresAt      DateTime
+  playedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  chatbotNodeId  String?
+  voucherCode    String?
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customer       Customer? @relation(fields: [customerId], references: [id])
+  game           Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([zaloId, gameId])
+  @@index([customerId])
+  @@index([accountId])
+  @@index([status])
+  @@index([platform])
+  @@index([expiresAt])
+}
+
+model PlayCreditRule {
+  id          String  @id @default(uuid())
+  accountId   String
+  type        String
+  name        String
+  credits     Int     @default(1)
+  isActive    Boolean @default(true)
+  description String?
+  icon        String?
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, type])
+  @@index([accountId])
+  @@map("SpinCreditRule")
+}
+
+model ZaloOA {
+  id               String             @id @default(uuid())
+  accountId        String
+  oaId             String             @unique
+  name             String
+  avatar           String?
+  description      String?
+  accessToken      String
+  refreshToken     String
+  tokenExpiresAt   DateTime
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  zbsBalance       Float              @default(0)
+  voiceCloudApiKey String?
+  campaigns        ZaloCampaign[]
+  followers        ZaloFollower[]
+  notifications    ZaloNotification[]
+  account          Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  templates        ZaloTemplate[]
+  zbsHistory       ZaloZbsHistory[]
+  zbsTopupRequests ZbsTopupRequest[]
+
+  @@index([accountId])
+}
+
+model ZaloFollower {
+  id          String    @id @default(uuid())
+  oaId        String
+  zaloUserId  String
+  displayName String?
+  avatar      String?
+  phone       String?
+  birthday    String?
+  gender      Int?
+  address     String?
+  city        String?
+  district    String?
+  ward        String?
+  sharedInfo  Int?
+  tags        String?
+  followedAt  DateTime?
+  syncedAt    DateTime  @default(now())
+  oa          ZaloOA    @relation(fields: [oaId], references: [id], onDelete: Cascade)
+
+  @@unique([oaId, zaloUserId])
+  @@index([oaId])
+}
+
+model ZaloTemplate {
+  id           String         @id @default(uuid())
+  oaId         String
+  templateId   String
+  templateName String
+  templateType String
+  status       String
+  rejectReason String?
+  content      String?
+  previewUrl   String?
+  priceSdt     Float?
+  priceUid     Float?
+  syncedAt     DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  campaigns    ZaloCampaign[]
+  oa           ZaloOA         @relation(fields: [oaId], references: [id], onDelete: Cascade)
+
+  @@unique([oaId, templateId])
+}
+
+model ZaloSyncLog {
+  id        String   @id @default(uuid())
+  oaId      String
+  syncType  String
+  status    String
+  message   String?
+  count     Int?
+  createdAt DateTime @default(now())
+}
+
+model ZaloSyncJob {
+  id        String   @id @default(uuid())
+  oaId      String
+  syncType  String
+  status    String
+  processed Int      @default(0)
+  total     Int      @default(0)
+  message   String?
+  startedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([oaId, syncType])
+  @@index([oaId, syncType])
+}
+
+model ZaloNotification {
+  id        String    @id @default(uuid())
+  oaId      String?
+  type      String
+  title     String
+  message   String
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  oa        ZaloOA?   @relation(fields: [oaId], references: [id], onDelete: Cascade)
+}
+
+model ZaloCampaign {
+  id           String           @id @default(uuid())
+  oaId         String
+  templateId   String
+  templateName String
+  name         String
+  status       String           @default("DRAFT")
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  validCount   Int              @default(0)
+  successCount Int              @default(0)
+  failCount    Int              @default(0)
+  totalCost    Float            @default(0)
+  recipients   String
+  results      String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  oa           ZaloOA           @relation(fields: [oaId], references: [id], onDelete: Cascade)
+  template     ZaloTemplate     @relation(fields: [oaId, templateId], references: [oaId, templateId])
+  zbsHistory   ZaloZbsHistory[]
+
+  @@index([oaId])
+  @@index([oaId, status])
+  @@index([scheduledAt])
+}
+
+model ZaloZbsHistory {
+  id           String        @id @default(uuid())
+  oaId         String
+  campaignId   String?
+  templateId   String
+  templateName String?
+  phone        String
+  templateData Json
+  status       String
+  message      String?
+  errorCode    Int?
+  zaloMsgId    String?
+  trackingId   String?       @unique
+  sentAt       DateTime      @default(now())
+  cost         Float?
+  campaign     ZaloCampaign? @relation(fields: [campaignId], references: [id])
+  oa           ZaloOA        @relation(fields: [oaId], references: [id], onDelete: Cascade)
+
+  @@index([oaId])
+  @@index([phone])
+  @@index([status])
+  @@index([templateId])
+  @@index([campaignId])
+}
+
+model ZaloCustomer {
+  id                String        @id @default(uuid())
+  zaloId            String        @unique
+  displayName       String?
+  avatar            String?
+  lastInteractionAt DateTime      @default(now())
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  messages          ZaloMessage[]
+
+  @@map("zalo_customers")
+}
+
+model ZaloMessage {
+  id         String       @id
+  customerId String
+  oaId       String
+  content    String
+  isFromOA   Boolean
+  status     String
+  timestamp  DateTime
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  customer   ZaloCustomer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, timestamp])
+  @@map("zalo_messages")
+}
+
+model ChatbotScenario {
+  id             String           @id @default(uuid())
+  accountId      String
+  oaId           String
+  name           String
+  trigger        String
+  steps          String           @default("[]")
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  platform       String           @default("ZALO")
+  AutomationStep AutomationStep[]
+  states         ChatbotState[]
+
+  @@map("chatbot_scenarios")
+}
+
+model ChatbotState {
+  id              String          @id @default(uuid())
+  scenarioId      String
+  senderId        String
+  currentStepTemp Int             @default(0)
+  collectedData   String          @default("{}")
+  status          String          @default("ACTIVE")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  scenario        ChatbotScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioId])
+  @@index([senderId])
+  @@index([senderId, status])
+  @@map("chatbot_states")
+}
+
+model FacebookPage {
+  id          String             @id @default(uuid())
+  accountId   String
+  pageId      String             @unique
+  name        String
+  avatar      String?
+  accessToken String
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  customers   FacebookCustomer[]
+  messages    FacebookMessage[]
+  account     Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("facebook_pages")
+}
+
+model FacebookCustomer {
+  id                String            @id @default(uuid())
+  pageId            String
+  psid              String
+  name              String?
+  avatar            String?
+  lastInteractionAt DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  gender            Int?
+  page              FacebookPage      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  messages          FacebookMessage[]
+
+  @@unique([pageId, psid])
+  @@map("facebook_customers")
+}
+
+model FacebookMessage {
+  id         String           @id
+  customerId String
+  pageId     String
+  content    String
+  isFromPage Boolean
+  status     String
+  timestamp  DateTime
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  customer   FacebookCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  page       FacebookPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, timestamp])
+  @@map("facebook_messages")
+}
+
+model AutomationRule {
+  id                String           @id @default(uuid())
+  accountId         String
+  name              String
+  triggerType       String
+  targetGameId      String?
+  targetPrizeId     String?
+  batchSize         Int              @default(50)
+  batchDelayMinutes Int              @default(5)
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  filterActiveOnly  Boolean          @default(false)
+  targetPlatform    String           @default("ALL")
+  customerGroupId   String?
+  targetAccountId   String?
+  oncePerCustomer   Boolean          @default(false)
+  endTime           DateTime?
+  startTime         DateTime?
+  status            String           @default("ACTIVE")
+  logs              AutomationLog[]
+  account           Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customerGroup     CustomerGroup?   @relation(fields: [customerGroupId], references: [id])
+  steps             AutomationStep[]
+  targetTags        Tag[]            @relation("AutomationRuleToTag")
+
+  @@index([accountId])
+  @@index([customerGroupId])
+  @@index([triggerType, isActive])
+  @@map("automation_rules")
+}
+
+model AutomationStep {
+  id             String           @id @default(uuid())
+  ruleId         String
+  delayHours     Int              @default(0)
+  targetPlatform String           @default("ALL")
+  messageType    String           @default("TEXT")
+  content        String
+  scenarioId     String?
+  order          Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  delayDays      Int?
+  sendAtTime     String?
+  delayMinutes   Int              @default(0)
+  logs           AutomationLog[]
+  rule           AutomationRule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  scenario       ChatbotScenario? @relation(fields: [scenarioId], references: [id])
+
+  @@index([ruleId])
+  @@map("automation_steps")
+}
+
+model AutomationLog {
+  id             String          @id @default(uuid())
+  ruleId         String
+  customerId     String?
+  zaloCustomerId String?
+  facebookPsid   String?
+  status         String          @default("PENDING")
+  errorMessage   String?
+  scheduledAt    DateTime
+  executedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  metadata       Json?
+  oaId           String?
+  pageId         String?
+  stepId         String?
+  telegramBotId  String?
+  telegramChatId String?
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  rule           AutomationRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  step           AutomationStep? @relation(fields: [stepId], references: [id])
+
+  @@index([ruleId])
+  @@index([stepId])
+  @@index([status, scheduledAt])
+  @@index([customerId])
+  @@index([ruleId, status])
+  @@map("automation_logs")
+}
+
+model TelegramBot {
+  id          String             @id @default(uuid())
+  accountId   String
+  botToken    String
+  botUsername String
+  name        String
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  account     Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customers   TelegramCustomer[]
+  messages    TelegramMessage[]
+
+  @@index([accountId])
+  @@map("telegram_bots")
+}
+
+model TelegramCustomer {
+  id                String            @id @default(uuid())
+  botId             String
+  chatId            String
+  firstName         String?
+  lastName          String?
+  username          String?
+  lastInteractionAt DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  bot               TelegramBot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages          TelegramMessage[]
+
+  @@unique([botId, chatId])
+  @@index([botId])
+  @@map("telegram_customers")
+}
+
+model TelegramMessage {
+  id         String           @id @default(uuid())
+  customerId String
+  botId      String
+  content    String
+  isFromBot  Boolean
+  status     String           @default("sent")
+  timestamp  DateTime
+  createdAt  DateTime         @default(now())
+  bot        TelegramBot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  customer   TelegramCustomer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([botId])
+  @@index([customerId, timestamp])
+  @@map("telegram_messages")
+}
+
+model AIConfig {
+  id              String       @id @default(uuid())
+  accountId       String
+  platform        String
+  platformId      String
+  agentName       String
+  welcomeMessage  String?
+  fallbackMessage String?
+  provider        String       @default("openai")
+  model           String       @default("gpt-4o-mini")
+  apiKey          String?
+  temperature     Float        @default(0.2)
+  topP            Float        @default(0.9)
+  systemPrompt    String
+  isActive        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  rules           Json?
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  documents       AIDocument[]
+
+  @@unique([accountId, platform, platformId])
+  @@map("ai_configs")
+}
+
+model AIDocument {
+  id              String   @id @default(uuid())
+  aiConfigId      String
+  name            String
+  size            Int
+  type            String
+  cogneeDataId    String?
+  cogneeDatasetId String?
+  uploadDate      DateTime @default(now())
+  status          String   @default("READY")
+  pathname        String?
+  aiConfig        AIConfig @relation(fields: [aiConfigId], references: [id], onDelete: Cascade)
+
+  @@index([aiConfigId])
+  @@map("ai_documents")
+}
+
+model PaymentRequest {
+  id              String   @id @default(uuid())
+  accountId       String
+  tier            String
+  amount          Float
+  status          String   @default("PENDING")
+  proofImage      String?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  adminNote       String?
+  transactionCode String?
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("payment_requests")
+}
+
+model ZbsTopupRequest {
+  id              String   @id @default(uuid())
+  accountId       String
+  amount          Float
+  transactionCode String?
+  status          String   @default("PENDING")
+  proofImage      String?
+  note            String?
+  adminNote       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  oaId            String?
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  oa              ZaloOA?  @relation(fields: [oaId], references: [id])
+
+  @@map("zbs_topup_requests")
+}
+
+model WorkspaceUsage {
+  id           String   @id @default(uuid())
+  accountId    String   @unique
+  storageUsed  BigInt   @default(0)
+  channelsUsed Int      @default(0)
+  messagesUsed Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_usage")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  accountId String
+  title     String
+  message   String
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  metadata  Json?
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ScenarioTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  type        String
+  description String?
+  instruction String?
+  coverImage  String?
+  steps       String?  @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("scenario_templates")
+}
+
+model AttributeConfig {
+  id          String   @id @default(uuid())
+  accountId   String
+  key         String
+  label       String
+  type        String   @default("TEXT")
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, key])
+  @@index([accountId])
+  @@map("attribute_configs")
+}
+
+model NhanhConfig {
+  id          String   @id @default(uuid())
+  accountId   String   @unique
+  appId       String
+  secretKey   String
+  accessToken String?
+  businessId  String?
+  expiredAt   Int?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("nhanh_configs")
+}
+
+model HaravanConfig {
+  id              String    @id @default(uuid())
+  accountId       String    @unique
+  appId           String
+  appSecret       String
+  accessToken     String?
+  shop            String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastRefreshedAt DateTime?
+  refreshToken    String?
+  tokenExpiresAt  DateTime?
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("haravan_configs")
+}
+
+model WebhookEvent {
+  id             String   @id @default(uuid())
+  webhookEventId String   @unique
+  platform       String
+  createdAt      DateTime @default(now())
+
+  @@map("webhook_events")
+}
+
+model SyncCheckpoint {
+  id             String   @id @default(uuid())
+  accountId      String
+  platform       String
+  status         String
+  lastSyncedPage Int      @default(1)
+  errorCount     Int      @default(0)
+  errorMessage   String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([accountId, platform])
+  @@index([accountId, platform])
+  @@map("sync_checkpoints")
+}
+
+model StockReservation {
+  id        String   @id @default(uuid())
+  productId String
+  accountId String
+  quantity  Int
+  expiresAt DateTime
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([accountId])
+  @@index([expiresAt, status])
+  @@map("stock_reservations")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  accountId String
+  action    String
+  modelName String
+  recordId  String
+  oldValue  Json?
+  newValue  Json?
+  changedBy String   @default("system")
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([modelName, recordId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model PackageOrder {
+  id                 String    @id @default(cuid())
+  idempotencyKey     String    @unique
+  accountId          String
+  customerId         String
+  expressCafeOrderId String?
+  packageId          String
+  packageName        String
+  amount             Decimal   @db.Decimal(10, 2)
+  status             String    @default("PENDING")
+  voucherCode        String?
+  voucherSentAt      DateTime?
+  nhanhOrderId       String?
+  haravanOrderId     String?
+  syncedAt           DateTime?
+  errorLog           String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([customerId])
+  @@index([status])
+}

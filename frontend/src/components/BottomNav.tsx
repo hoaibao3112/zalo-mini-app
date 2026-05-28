@@ -26,7 +26,7 @@ export const BottomNav: React.FC = () => {
               key={item.path}
               onClick={() => navigate(item.path)}
               className={`relative flex flex-col items-center justify-center w-14 h-14 rounded-[20px] transition-all duration-400 ease-out active:scale-95 ${
-                active ? 'bg-brand-primary shadow-md shadow-orange-500/30 text-white' : 'text-gray-400 hover:text-gray-700 bg-transparent'
+                active ? 'bg-brand-coffee shadow-md shadow-amber-950/20 text-white' : 'text-gray-400 hover:text-gray-700 bg-transparent'
               }`}
             >
               <div className={`transition-transform duration-300 ${active ? '-translate-y-0.5' : 'translate-y-0'}`}>

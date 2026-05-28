@@ -16,6 +16,7 @@ interface AuthContextType {
     user: User | null;
     isLoading: boolean;
     isLoggedIn: boolean;
+    authError: string | null;
     login: () => Promise<void>;
     logout: () => void;
 }
@@ -24,17 +25,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function getZaloUserInfo(): Promise<{ zaloId: string; name: string; avatar?: string; idByOA?: string; gender?: number; birthday?: string } | null> {
     try {
-        // Yêu cầu quyền truy cập thông tin user
-        // Theo tài liệu mới: scope.userInfo bao gồm cả public_profile, user_gender, user_birthday nếu user đồng ý
-        // Lưu ý: user có thể uncheck quyền này.
-        // Call 1: Basic Info & Phone
-        // Note: Zalo SDK only supports 'scope.userInfo', 'scope.userLocation', 'scope.userPhonenumber'.
-        // Gender and Birthday must be retrieved via backend using the accessToken derived from scope.userInfo if the App is configured to allow it.
         await authorize({
             scopes: ['scope.userInfo']
         });
 
-        // Lấy thông tin user từ Zalo
         const result = await getUserInfo({});
         console.log("Zalo SDK getUserInfo result:", result);
 
@@ -44,7 +38,7 @@ async function getZaloUserInfo(): Promise<{ zaloId: string; name: string; avatar
                 zaloId: u.id,
                 name: u.name,
                 avatar: u.avatar,
-                idByOA: u.idByOA, // Lấy ID theo OA nếu có
+                idByOA: u.idByOA,
                 gender: u.gender === 'male' || u.gender === 1 ? 1 : (u.gender === 'female' || u.gender === 0 ? 0 : undefined),
                 birthday: u.birthday
             };
@@ -60,42 +54,45 @@ async function getZaloUserInfo(): Promise<{ zaloId: string; name: string; avatar
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [authError, setAuthError] = useState<string | null>(null);
     const loginInProgress = React.useRef(false);
+
+    const isDev = import.meta.env.MODE === 'development';
 
     useEffect(() => {
         setIsLoading(false);
     }, []);
 
-    async function checkAuth() {
-        setIsLoading(false);
-    }
-
     async function login() {
         if (loginInProgress.current) return;
         loginInProgress.current = true;
         setIsLoading(true);
+        setAuthError(null);
         try {
             let zaloInfo = await getZaloUserInfo();
 
-            // CHẾ ĐỘ THỬ NGHIỆM BYPASS: Nếu Zalo SDK báo lỗi hoặc chưa kích hoạt App ID trên Portal (Lỗi -1401)
-            // Tự động kích hoạt tài khoản thử nghiệm để bạn và quản lý có thể trải nghiệm 100% tính năng mua sắm
             if (!zaloInfo) {
-                console.warn("Zalo SDK Login failed (code -1401 hoặc chưa có tài khoản test). Kích hoạt tài khoản Mock để chạy thử...");
-                zaloInfo = {
-                    zaloId: "mock-zalo-id-aizen-test",
-                    name: "Khách Hàng Thử Nghiệm",
-                    avatar: "https://placehold.co/150x150?text=Aizen+Test",
-                    gender: 1,
-                    birthday: "1998-08-08"
-                };
+                if (isDev) {
+                    console.warn("Zalo SDK Login failed (development mode). Kích hoạt tài khoản Mock để chạy thử...");
+                    zaloInfo = {
+                        zaloId: "mock-zalo-id-aizen-test",
+                        name: "Khách Hàng Thử Nghiệm",
+                        avatar: "https://placehold.co/150x150?text=Aizen+Test",
+                        gender: 1,
+                        birthday: "1998-08-08"
+                    };
+                } else {
+                    throw new Error("Không thể lấy thông tin đăng nhập từ ứng dụng Zalo.");
+                }
             }
 
-            // Lấy accessToken từ Mini App để backend có thể fetch thêm thông tin (gender, birthday)
-            const accessToken = await getAccessToken({}).catch(() => undefined);
-            
-            // Lưu token vào localStorage để đính kèm vào Authorization header cho các API sau
-            const tokenToStore = accessToken || 'mock-access-token-aizen-test';
-            localStorage.setItem('zalo_access_token', tokenToStore);
+            // Lấy accessToken từ Mini App (sẽ gửi lên backend để backend đặt httpOnly cookie)
+            const accessToken = await getAccessToken({}).catch((err) => {
+                if (isDev) {
+                    return undefined;
+                }
+                throw new Error("Không thể lấy Access Token đăng nhập Zalo: " + (err.message || 'Lỗi không xác định'));
+            });
 
             // Gọi API để tạo/lấy customer trong cơ sở dữ liệu thật qua Backend
             const res = await api.authZalo({
@@ -112,19 +109,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setUser(res.data);
             } else {
                 // Fallback nếu API trả về trực tiếp customer hoặc gặp lỗi
-                setUser(res && res.id ? res : null);
-                if (res && res.success === false) {
-                    throw new Error(res.message || 'Xác thực thất bại');
+                const resolvedUser = res && res.id ? res : null;
+                setUser(resolvedUser);
+                if (!resolvedUser || (res && res.success === false)) {
+                    throw new Error(res?.message || 'Xác thực tài khoản với máy chủ thất bại.');
                 }
             }
-        } catch (error) {
+            } catch (error: any) {
             console.error('Login error:', error);
-            // Phòng hờ khẩn cấp nếu API Backend gặp sự cố kết nối Database tại local
-            localStorage.setItem('zalo_access_token', 'mock-access-token-aizen-test');
-            setUser({
-                id: "mock-cuid-for-offline-test",
-                name: "Khách Hàng Offline"
-            } as any);
+            if (isDev) {
+                setUser({
+                    id: "mock-cuid-for-offline-test",
+                    zaloId: "mock-zalo-id-aizen-test",
+                    name: "Khách Hàng Offline"
+                } as any);
+            } else {
+                setAuthError(error.message || 'Đã xảy ra lỗi không xác định trong quá trình đăng nhập.');
+                setUser(null);
+            }
         } finally {
             setIsLoading(false);
             loginInProgress.current = false;
@@ -132,8 +134,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     function logout() {
-        localStorage.removeItem('zalo_access_token');
-        setUser(null);
+        api.logout().finally(() => {
+            setUser(null);
+            setAuthError(null);
+        });
     }
 
     return (
@@ -141,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             user,
             isLoading,
             isLoggedIn: !!user,
+            authError,
             login,
             logout
         }}>

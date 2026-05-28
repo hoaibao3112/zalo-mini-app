@@ -1,5 +1,5 @@
 import { User, CreditCard, Settings, LogOut, ChevronRight, MapPin, Bell, HelpCircle, LogIn } from 'lucide-react';
-import { BottomNav } from '../components/BottomNav';
+import { BottomNav } from '../components/layout/BottomNav';
 import { useAuth } from '../context/AuthContext';
 
 import { api } from '../lib/api';

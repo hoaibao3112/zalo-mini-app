@@ -1,12 +1,21 @@
 import React from 'react';
-import { Search, Heart } from 'lucide-react';
+import { Search, Heart, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { BottomNav } from '../components/BottomNav';
+import { BottomNav } from '../components/layout/BottomNav';
+
+interface FavoriteProduct {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  image: string;
+  rating?: number;
+}
 
 export const Favorites: React.FC = () => {
   const navigate = useNavigate();
   // TODO: Fetch real favorites from backend
-  const favoriteProducts: any[] = [];
+  const favoriteProducts: FavoriteProduct[] = [];
 
   return (
     <div className="flex flex-col h-full bg-brand-cream">
@@ -40,20 +49,24 @@ export const Favorites: React.FC = () => {
 
                 <div className="mt-3 px-1">
                     <h3 className="text-brand-dark font-bold text-lg leading-tight truncate">{product.name}</h3>
-                    <p className="text-brand-gray text-xs mt-1 truncate">{product.description}</p>
+                    <p className="text-gray-400 text-xs mt-1 truncate">{product.description}</p>
                     
                     <div className="flex justify-between items-center mt-3">
-                        <p className="text-brand-dark font-bold text-base"><span className="text-brand-primary">$</span>{product.price.toFixed(2)}</p>
+                        <p className="text-brand-dark font-bold text-base">
+                          <span className="text-brand-primary">₫</span>{product.price.toLocaleString('vi-VN')}
+                        </p>
                         {/* Heart Button (Active) */}
                         <button className="w-8 h-8 bg-pink-50 rounded-xl flex items-center justify-center text-red-500 shadow-sm">
                             <Heart size={16} fill="currentColor" />
                         </button>
                     </div>
                     
-                    <div className="flex items-center text-[10px] text-brand-dark font-bold mt-2">
-                        <Star size={10} className="text-brand-primary fill-brand-primary mr-1" />
-                        <span>{product.rating}</span>
-                    </div>
+                    {product.rating !== undefined && (
+                      <div className="flex items-center text-[10px] text-brand-dark font-bold mt-2">
+                          <Star size={10} className="text-brand-primary mr-1" fill="#FF6B00" />
+                          <span>{product.rating}</span>
+                      </div>
+                    )}
                 </div>
               </div>
             ))}

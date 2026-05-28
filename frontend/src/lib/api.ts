@@ -1,6 +1,6 @@
 // Tenant slug - chỉ đọc từ biến môi trường
 export const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG || '388af042-5828-4777-8961-dc2cda5156a3';
-export const API_HOST = import.meta.env.VITE_API_HOST || 'http://localhost:10007';
+export const API_HOST = import.meta.env.VITE_API_HOST || 'http://localhost:5000';
 const API_BASE = `${API_HOST}/api/t/${TENANT_SLUG}`;
 
 export interface Package {
@@ -37,19 +37,22 @@ export const getMediaUrl = (url: string | null | undefined): string => {
 };
 
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('zalo_access_token');
     const headers = {
         'Content-Type': 'application/json',
-        ...options.headers,
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        'bypass-tunnel-reminder': 'true',
+        ...options.headers
     };
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers, credentials: 'include' });
     const json = await res.json();
     return (json && json.success) ? json.data : json;
 };
 
 const fetchUnwrapped = async (url: string, options: RequestInit = {}) => {
-    const res = await fetch(url, options);
+    const headers = {
+        'bypass-tunnel-reminder': 'true',
+        ...options.headers
+    };
+    const res = await fetch(url, { ...options, headers, credentials: 'include' });
     const json = await res.json();
     return (json && json.success) ? json.data : json;
 };
@@ -81,9 +84,18 @@ export const api = {
     authZalo: (data: { zaloId: string; name: string; avatar?: string; phone?: string; idByOA?: string; accessToken?: string; gender?: number; birthday?: string }) =>
         fetch(`${API_BASE}/customers/auth/zalo`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            headers: { 
+                'Content-Type': 'application/json',
+                'bypass-tunnel-reminder': 'true'
+            },
+            body: JSON.stringify(data),
+            credentials: 'include'
         }).then(r => r.json()).then(res => (res && res.success) ? res.data : res),
+    logout: () => fetch(`${API_BASE}/customers/logout`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'bypass-tunnel-reminder': 'true' }
+    }).then(r => r.json()).then(res => (res && res.success) ? res.data : res).catch(() => null),
 
     // Customer
     updateCustomer: async (id: string, data: any) => {
@@ -153,12 +165,12 @@ export const api = {
 
     // Express Cafe POS Integration
     getExpressPackages: async (): Promise<{ packages: Package[] }> => {
-        const token = localStorage.getItem('zalo_access_token');
         const res = await fetch(`${API_BASE}/express-packages`, {
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            }
+                'bypass-tunnel-reminder': 'true'
+            },
+            credentials: 'include'
         });
         const json = await res.json();
         if (!res.ok) {
@@ -177,15 +189,15 @@ export const api = {
         unitId?: string;    // gửi lên để backend gọi POS
         productId?: string; // gửi lên để backend gọi POS
     }): Promise<{ orderId: string; status: string; message: string }> => {
-        const token = localStorage.getItem('zalo_access_token');
         const res = await fetch(`${API_BASE}/express-packages/purchase`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'idempotency-key': idempotencyKey,
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                'bypass-tunnel-reminder': 'true'
             },
-            body: JSON.stringify(data)
+            body: JSON.stringify(data),
+            credentials: 'include'
         });
         const json = await res.json();
         if (!res.ok) {
@@ -194,12 +206,12 @@ export const api = {
         return json;
     },
     getPackageOrders: async (customerId: string): Promise<{ orders: PackageOrder[] }> => {
-        const token = localStorage.getItem('zalo_access_token');
         const res = await fetch(`${API_BASE}/express-packages/orders/${customerId}`, {
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            }
+                'bypass-tunnel-reminder': 'true'
+            },
+            credentials: 'include'
         });
         const json = await res.json();
         if (!res.ok) {

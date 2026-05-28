@@ -1,7 +1,26 @@
 import { useState, useEffect } from 'react';
 import { OmniProduct } from '../types/omni.types';
-
 import { api } from '../lib/api';
+
+interface EcomApiItem {
+  id?: string | number;
+  externalId?: string | number;
+  name?: string;
+  title?: string;
+  price?: string | number;
+  salePrice?: string | number;
+  image?: string;
+  description?: string;
+  platform?: string;
+  categoryId?: string | number;
+}
+
+interface EcomApiResponse {
+  success?: boolean;
+  data?: EcomApiItem[];
+  error?: string;
+  message?: string;
+}
 
 export function useOmniProducts(platform: 'nhanh' | 'haravan' | 'local' = 'nhanh') {
   const [products, setProducts] = useState<OmniProduct[]>([]);
@@ -15,54 +34,35 @@ export function useOmniProducts(platform: 'nhanh' | 'haravan' | 'local' = 'nhanh
         setError(null);
 
         const source = platform === 'local' ? 'ALL' : platform.toUpperCase();
-        console.log(`[DEBUG-FE] Calling api.getEcomProducts with source: ${source}`);
-        
-        const res = await api.getEcomProducts(source);
-        console.log('[DEBUG-FE] Raw Response:', res);
+        const res: EcomApiResponse | EcomApiItem[] = await api.getEcomProducts(source);
 
-        // Safeguard for different response formats
-        let data: any[] = [];
+        let data: EcomApiItem[] = [];
         if (Array.isArray(res)) {
           data = res;
-        } else if (res && Array.isArray(res.data)) {
-          data = res.data;
+        } else if (res && Array.isArray((res as EcomApiResponse).data)) {
+          data = (res as EcomApiResponse).data!;
         } else {
-          console.warn('[DEBUG-FE] Unexpected response format:', res);
-          // Nếu backend trả về success: false hoặc error
-          if (res && res.message) throw new Error(res.message);
-          if (res && res.error) throw new Error(res.error);
+          const errRes = res as EcomApiResponse;
+          if (errRes?.message) throw new Error(errRes.message);
+          if (errRes?.error) throw new Error(errRes.error);
         }
 
-        const mappedProducts: OmniProduct[] = data.map((item: any) => ({
-          id: item.id || item.externalId || String(Math.random()),
+        const mappedProducts: OmniProduct[] = data.map((item) => ({
+          id: (item.id ?? item.externalId ?? String(Math.random())) as string,
           externalId: item.externalId ? Number(item.externalId) : undefined,
           name: item.name || item.title || 'Sản phẩm',
           price: Number(item.price || 0),
           salePrice: item.salePrice ? Number(item.salePrice) : undefined,
           image: api.getMediaUrl(item.image || ''),
           description: item.description || '',
-          platform: item.platform?.toLowerCase() || platform,
-          categoryId: item.categoryId 
+          platform: (item.platform?.toLowerCase() as OmniProduct['platform']) || platform,
+          categoryId: item.categoryId,
         }));
-        
-        console.log('[DEBUG-FE] Total mapped products:', mappedProducts.length);
-        
-        // MOCK fallback for testing if UI works
-        if (mappedProducts.length === 0) {
-          console.warn('[DEBUG-FE] API returned 0 products, adding MOCK product');
-          setProducts([{
-            id: 'mock-local-1',
-            name: 'Sản phẩm Test (Nếu thấy món này là FE render OK)',
-            price: 55000,
-            image: 'https://images.unsplash.com/photo-1541167760496-162955ed2196?w=500',
-            platform: 'local'
-          }]);
-        } else {
-          setProducts(mappedProducts);
-        }
-      } catch (err: any) {
-        console.error('[DEBUG-FE] Fetch Error:', err);
-        setError(err.message || 'Lỗi không xác định khi tải sản phẩm');
+
+        setProducts(mappedProducts);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Lỗi không xác định khi tải sản phẩm';
+        setError(message);
       } finally {
         setLoading(false);
       }

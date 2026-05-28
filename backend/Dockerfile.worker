@@ -1,0 +1,58 @@
+# =============================================================================
+# Stage 1: deps — Cài đặt dependencies production-only
+# =============================================================================
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma/
+
+RUN npm ci --omit=dev && npm cache clean --force
+
+RUN npx prisma generate
+
+# =============================================================================
+# Stage 2: builder — Build TypeScript → JavaScript
+# =============================================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY prisma ./prisma/
+
+RUN npx prisma generate
+RUN npm run build
+
+# =============================================================================
+# Stage 3: runner — Runtime image dành riêng cho Worker
+# =============================================================================
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Tạo user non-root để chạy ứng dụng (bảo mật)
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 workerjs
+
+# Copy production node_modules từ stage deps
+COPY --from=deps --chown=workerjs:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=workerjs:nodejs /app/prisma ./prisma
+
+# Copy compiled JavaScript từ stage builder
+COPY --from=builder --chown=workerjs:nodejs /app/dist ./dist
+
+USER workerjs
+
+ENV NODE_ENV=production
+
+# Worker KHÔNG expose port HTTP, chỉ kết nối DB + Redis qua nội bộ network
+# Khởi động worker entry point (dist/worker.js)
+CMD ["node", "dist/worker.js"]
