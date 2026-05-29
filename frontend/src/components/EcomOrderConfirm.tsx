@@ -63,9 +63,13 @@ export const EcomOrderConfirm: React.FC<EcomOrderConfirmProps> = ({
     };
 
     const handleSubmit = async () => {
+        const isLocal = product.platform === 'LOCAL';
+
+        // Validate form — LOCAL không cần địa chỉ
         if (!address.name.trim()) { setError('Vui lòng nhập họ tên người nhận'); return; }
-        if (!address.phone.trim() || !/^(0|84|\+84)[0-9]{8,10}$/.test(address.phone.replace(/[\s.-]/g, ''))) {
-            setError('Số điện thoại không hợp lệ'); return;
+        const cleanPhone = address.phone.replace(/[\s.\-()]/g, '');
+        if (!cleanPhone || !/^(\+?84|0)[3-9][0-9]{8}$/.test(cleanPhone)) {
+            setError('Số điện thoại không hợp lệ (VD: 0901234567)'); return;
         }
         if (!user?.id) { setError('Vui lòng đăng nhập để đặt hàng'); return; }
 
@@ -75,20 +79,30 @@ export const EcomOrderConfirm: React.FC<EcomOrderConfirmProps> = ({
             const res = await api.createEcomOrder({
                 customerId: user.id,
                 platform: product.platform,
-                externalProductId: product.externalId,
+                externalProductId: product.externalId || 0,
                 externalVariantId: selectedVariantId,
                 quantity,
-                shippingAddress: address,
-                note,
+                unitPrice: unitPrice,
+                shippingAddress: isLocal ? undefined : {
+                    ...address,
+                    phone: cleanPhone, // gửi số đã clean
+                },
+                note: note || undefined,
             });
 
-            if (res?.success) {
-                onSuccess(res.internalOrderId || res.externalOrderId || '');
+            // api.createEcomOrder trả về data (fetchWithAuth unwrap success.data)
+            // nếu có internalOrderId hoặc id → thành công
+            const orderId = (res as any)?.internalOrderId || (res as any)?.id || (res as any)?.externalOrderId;
+            if (orderId) {
+                onSuccess(orderId);
+            } else if ((res as any)?.error || (res as any)?.message) {
+                setError((res as any).message || (res as any).error || 'Đặt hàng thất bại');
             } else {
-                setError(res?.error || 'Đặt hàng thất bại. Vui lòng thử lại.');
+                setError('Đặt hàng thất bại. Vui lòng thử lại.');
             }
-        } catch {
-            setError('Lỗi kết nối. Vui lòng thử lại.');
+        } catch (err: any) {
+            console.error('[EcomOrderConfirm] Error:', err);
+            setError(err?.message || 'Lỗi kết nối. Vui lòng thử lại.');
         } finally {
             setLoading(false);
         }

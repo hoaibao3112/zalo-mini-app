@@ -68,5 +68,6 @@ EXPOSE 5000
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Chạy migration rồi start API server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# Migration đã được tách ra service riêng trong docker-compose.prod.yml
+# Xem: service `migrate` với condition: service_completed_successfully
+CMD ["node", "dist/index.js"]

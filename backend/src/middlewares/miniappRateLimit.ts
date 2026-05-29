@@ -2,6 +2,7 @@ import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { Response, NextFunction } from 'express';
 import { MiniappRequest } from '../types.js';
 import redis from '../lib/redis.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Giới hạn requests: 60 req/phút/customer (hoặc IP)
@@ -61,7 +62,11 @@ export const miniappRateLimit = async (
             });
         } else {
             // Lỗi kết nối Redis thực sự → fail-open để không chặn user
-            console.error('[miniappRateLimit] Lỗi kết nối Redis rate limiter:', rateLimiterRes);
+            logger.error(
+                { correlationId: req.correlationId || '', action: 'RATE_LIMITER_REDIS_ERROR' },
+                'Lỗi kết nối Redis rate limiter:',
+                rateLimiterRes
+            );
             next();
         }
     }

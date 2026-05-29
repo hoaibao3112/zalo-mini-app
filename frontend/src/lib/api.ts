@@ -117,11 +117,59 @@ export const api = {
             method: 'POST',
             body: JSON.stringify(data)
         }),
-    createEcomOrder: (data: any) =>
-        fetchWithAuth(`${API_BASE}/ecom/orders`, {
+    createEcomOrder: (data: {
+        customerId: string;
+        platform: string;
+        // Có thể truyền flat (từ EcomOrderConfirm) hoặc items array (từ Cart)
+        externalProductId?: number;
+        externalVariantId?: number;
+        quantity?: number;
+        unitPrice?: number;
+        items?: Array<{
+            externalProductId: number;
+            externalVariantId?: number;
+            quantity: number;
+            unitPrice?: number;
+            name?: string;
+            image?: string;
+        }>;
+        shippingAddress?: {
+            name: string;
+            phone: string;
+            address?: string;
+            city?: string;
+            district?: string;
+            ward?: string;
+        };
+        note?: string;
+        idempotencyKey?: string;
+        paymentMethod?: 'COD' | 'ONLINE';
+        deliveryType?: 'DELIVERY' | 'PICKUP';
+        pickupTime?: string;
+    }) => {
+        // Auto-convert flat format → items array (backend cũng có preprocess nhưng đây là defence thêm)
+        const payload = { ...data };
+        if (!payload.items && payload.externalProductId !== undefined) {
+            payload.items = [{
+                externalProductId: payload.externalProductId || 0,
+                externalVariantId: payload.externalVariantId,
+                quantity: payload.quantity ?? 1,
+                unitPrice: payload.unitPrice ?? 0,
+            }];
+            delete (payload as any).externalProductId;
+            delete (payload as any).externalVariantId;
+            delete (payload as any).quantity;
+            delete (payload as any).unitPrice;
+        }
+        return fetchWithAuth(`${API_BASE}/ecom/orders`, {
             method: 'POST',
-            body: JSON.stringify(data)
-        }),
+            body: JSON.stringify(payload),
+        });
+    },
+    // Polling trạng thái thanh toán VietQR (mỗi 3 giây 1 lần)
+    getOrderPaymentStatus: (orderId: string) =>
+        fetchUnwrapped(`${API_BASE}/ecom/orders/${orderId}/payment-status`),
+
     getCustomerOrders: (customerId: string) =>
         fetchWithAuth(`${API_BASE}/orders/customer/${customerId}`),
 
@@ -134,6 +182,10 @@ export const api = {
         fetchWithAuth(`${API_BASE}/spin-games/${gameId}/spin`, {
             method: 'POST',
             body: JSON.stringify({ customerId })
+        }),
+    exchangePoints: (gameId: string) =>
+        fetchWithAuth(`${API_BASE}/spin-games/${gameId}/exchange-points`, {
+            method: 'POST'
         }),
 
     // Popup
@@ -188,6 +240,7 @@ export const api = {
         note?: string;
         unitId?: string;    // gửi lên để backend gọi POS
         productId?: string; // gửi lên để backend gọi POS
+        quantity?: number;  // số lượng đặt mua
     }): Promise<{ orderId: string; status: string; message: string }> => {
         const res = await fetch(`${API_BASE}/express-packages/purchase`, {
             method: 'POST',

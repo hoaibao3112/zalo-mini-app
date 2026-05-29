@@ -1,6 +1,18 @@
-version: '3.8'
-
 services:
+
+  # ─── DB Migration Init Container (chạy 1 lần trước khi backend khởi động) ───
+  migrate:
+    image: ghcr.io/hoaibao3112/zalo-mini-app-backend:${API_IMAGE_TAG:-latest}
+    command: ["sh", "-c", "npx prisma migrate deploy"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: "no"
+  # ─── Backend API Instances (chạy SAU khi migrate hoàn thành) ───
   backend-1:
     image: ghcr.io/hoaibao3112/zalo-mini-app-backend:${API_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -17,6 +29,8 @@ services:
       - ZALO_APP_ID=${ZALO_APP_ID}
       - ZALO_APP_SECRET=${ZALO_APP_SECRET}
     depends_on:
+      migrate:
+        condition: service_completed_successfully  # ← chờ migrate xong mới start
       postgres:
         condition: service_healthy
       redis:
@@ -46,6 +60,8 @@ services:
       - ZALO_APP_ID=${ZALO_APP_ID}
       - ZALO_APP_SECRET=${ZALO_APP_SECRET}
     depends_on:
+      migrate:
+        condition: service_completed_successfully  # ← chờ migrate xong mới start
       postgres:
         condition: service_healthy
       redis:
@@ -72,10 +88,19 @@ services:
       - ZALO_APP_ID=${ZALO_APP_ID}
       - ZALO_APP_SECRET=${ZALO_APP_SECRET}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Worker healthcheck: kiểm tra process còn sống (không có HTTP server)
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     networks:
       - app-network
 
@@ -111,7 +136,7 @@ services:
       - app-network
 
   db-backup:
-    image: alpine:3.19
+    image: postgres:16-alpine  # dùng postgres image — pg_dump đã có sẵn, không cần apk install
     restart: unless-stopped
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
@@ -125,8 +150,7 @@ services:
         condition: service_healthy
     entrypoint: |
       sh -c '
-      apk add --no-cache postgresql-client;
-      echo "0 2 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB | gzip > /backups/backup_\$$(date +\%Y\%m\%d_\%H\%M\%S).sql.gz && find /backups -type f -mtime +7 -name \"backup_*.sql.gz\" -delete" > /etc/crontabs/root;
+      echo "0 2 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB | gzip > /backups/backup_$$(date +\%Y\%m\%d_\%H\%M\%S).sql.gz && find /backups -type f -mtime +7 -name \"backup_*.sql.gz\" -delete" > /etc/crontabs/root;
       exec crond -f -l 2
       '
     networks:

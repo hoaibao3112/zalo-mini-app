@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Heart, Minus, Plus, Star, Sparkles, Coffee, Info, Check, ShoppingCart, Share2 } from 'lucide-react';
+import { ChevronLeft, Heart, Minus, Plus, Star, Sparkles, Coffee, Info, Check, ShoppingCart, Share2, Thermometer } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useOmniProducts } from '../hooks/useOmniProducts';
 import { api } from '../lib/api';
 import type { CartItem } from '../types/models.types';
+import { useTranslation } from 'react-i18next';
 
 const SIZE_OPTIONS = [
   { label: 'Nhỏ', id: 'S', volume: '360ml' },
@@ -21,13 +22,14 @@ const SWEETNESS_OPTIONS = [
 ] as const;
 
 const TEMP_OPTIONS = [
-  { label: 'Uống Đá 🧊', id: 'ice' },
-  { label: 'Uống Nóng 🔥', id: 'hot' },
+  { label: 'Uống Đá', id: 'ice' },
+  { label: 'Uống Nóng', id: 'hot' },
 ] as const;
 
 export const ProductDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { addToCart } = useCart();
   
   const { products, loading } = useOmniProducts('local');
@@ -40,10 +42,38 @@ export const ProductDetail: React.FC = () => {
   const [sweetness, setSweetness] = useState<number>(50);
   const [temperature, setTemperature] = useState<'ice'|'hot'>('ice');
   const [isFavorite, setIsFavorite] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
   
   // Trạng thái thông báo
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+  // Fetch categories on mount
+  useEffect(() => {
+    api.getCategories()
+      .then(data => {
+        if (Array.isArray(data)) {
+          setCategories(data);
+        }
+      })
+      .catch(err => console.error('Failed to load categories', err));
+  }, []);
+
+  // Lấy tên danh mục của sản phẩm
+  const categoryName = useMemo(() => {
+    if (!product || !categories.length) return '';
+    const cat = categories.find(c => String(c.id) === String(product.categoryId));
+    return cat ? cat.name : '';
+  }, [product, categories]);
+
+  // Phân loại sản phẩm: Đồ uống (DRINK) hay Đồ ăn/Retail (FOOD)
+  const productType = useMemo(() => {
+    if (!categoryName) return 'DRINK'; // Mặc định là đồ uống nếu chưa load xong
+    const nameLower = categoryName.toLowerCase();
+    const foodKeywords = ['bánh', 'đồ ăn', 'thức ăn', 'hạt', 'quà', 'cake', 'bread', 'food', 'snack', 'gift', 'croissant', 'mousse', 'cà phê đóng gói'];
+    const isFood = foodKeywords.some(keyword => nameLower.includes(keyword));
+    return isFood ? 'FOOD' : 'DRINK';
+  }, [categoryName]);
 
   // Cuộn về đỉnh khi đổi ID sản phẩm
   useEffect(() => {
@@ -105,15 +135,15 @@ export const ProductDetail: React.FC = () => {
   }
 
   const getMilkLabel = (level: number) => {
-    if (level === 0) return 'Không sữa';
-    if (level <= 25) return 'Ít sữa';
-    if (level <= 50) return 'Vừa sữa';
-    if (level <= 75) return 'Nhiều sữa';
-    return 'Rất nhiều sữa';
+    if (level === 0) return t('milk_none', 'Không sữa');
+    if (level <= 25) return t('milk_less', 'Ít sữa');
+    if (level <= 50) return t('milk_medium', 'Vừa sữa');
+    if (level <= 75) return t('milk_more', 'Nhiều sữa');
+    return t('milk_extra', 'Rất nhiều sữa');
   };
 
   const handleAddToCart = () => {
-    const optionDesc = `${getMilkLabel(milkLevel)} | ${sweetness}% Đường | ${temperature === 'ice' ? 'Uống Đá' : 'Uống Nóng'}`;
+    const isDrink = productType === 'DRINK';
     const cartItem: CartItem = {
       id: String(product.id),
       name: product.name,
@@ -122,10 +152,12 @@ export const ProductDetail: React.FC = () => {
       salePrice: product.salePrice ?? null,
       image: product.image,
       categoryId: String(product.categoryId || ''),
-      cartId: `${product.id}-${size}-${milkLevel}-${sweetness}-${temperature}-${Date.now()}`,
+      cartId: isDrink
+        ? `${product.id}-${size}-${milkLevel}-${sweetness}-${temperature}-${Date.now()}`
+        : `${product.id}-food-${Date.now()}`,
       quantity,
-      size,
-      milkLevel
+      size: isDrink ? size : undefined as any,
+      milkLevel: isDrink ? milkLevel : undefined as any
     };
     
     addToCart(cartItem);
@@ -151,7 +183,7 @@ export const ProductDetail: React.FC = () => {
           <button 
             onClick={() => {
               setIsFavorite(!isFavorite);
-              showToast(isFavorite ? "💔 Đã xóa khỏi danh sách yêu thích!" : "❤️ Đã thêm vào danh sách yêu thích!");
+              showToast(isFavorite ? "Đã xóa khỏi danh sách yêu thích!" : "Đã thêm vào danh sách yêu thích!");
             }}
             className="w-11 h-11 bg-white/75 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center transition-all shadow-md active:scale-90"
           >
@@ -183,7 +215,7 @@ export const ProductDetail: React.FC = () => {
           {/* Floating Badges */}
           <div className="absolute bottom-12 left-6 z-10 flex gap-2">
             <span className="px-3.5 py-1.5 bg-amber-500 text-white rounded-full text-[10px] font-extrabold shadow-md flex items-center gap-1 uppercase tracking-wider animate-pulse">
-              <Sparkles size={10} className="fill-white" /> Bán chạy nhất 🔥
+              <Sparkles size={10} className="fill-white" /> Bán chạy nhất
             </span>
             {product.salePrice && (
               <span className="px-3 py-1 bg-red-500 text-white rounded-full text-[10px] font-extrabold shadow-md flex items-center gap-1 uppercase tracking-wider">
@@ -214,7 +246,10 @@ export const ProductDetail: React.FC = () => {
                 <span className="text-xs text-gray-300 font-bold">•</span>
                 <span className="text-xs text-gray-500 font-bold bg-white px-2 py-0.5 rounded-lg border border-gray-100 shadow-xs">Đã bán 120+ ly</span>
                 <span className="text-xs text-gray-300 font-bold">•</span>
-                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg font-extrabold border border-emerald-100">Local Chef ☕</span>
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg font-extrabold border border-emerald-100 flex items-center gap-1">
+                  <Coffee size={11} className="text-emerald-600 shrink-0" />
+                  <span>Local Chef</span>
+                </span>
               </div>
             </div>
             
@@ -224,7 +259,7 @@ export const ProductDetail: React.FC = () => {
                   <span className="text-xs text-gray-300 line-through font-bold mb-0.5">
                     {product.price.toLocaleString()}đ
                   </span>
-                  <span className="text-2xl font-black text-brand-primary leading-none tracking-tight">
+                  <span className="text-2xl font-black text-[#E53E3E] leading-none tracking-tight">
                     {product.salePrice.toLocaleString()}đ
                   </span>
                   <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md mt-1 border border-emerald-100">
@@ -232,7 +267,7 @@ export const ProductDetail: React.FC = () => {
                   </span>
                 </>
               ) : (
-                <span className="text-2xl font-black text-brand-primary leading-none tracking-tight">
+                <span className="text-2xl font-black text-[#E53E3E] leading-none tracking-tight">
                   {product.price.toLocaleString()}đ
                 </span>
               )}
@@ -241,167 +276,174 @@ export const ProductDetail: React.FC = () => {
 
           <div className="h-px w-full bg-gray-200/60 mb-6"></div>
 
-          {/* Interactive Size Option */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                <Coffee size={14} className="text-brand-coffee" /> Chọn kích cỡ
-              </h3>
-              <span className="text-[10px] text-brand-coffeeLight font-extrabold bg-brand-light px-2.5 py-0.5 rounded-md">Bắt buộc</span>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-3">
-              {SIZE_OPTIONS.map((opt) => {
-                const isActive = size === opt.id;
-                return (
-                  <button 
-                    key={opt.id}
-                    onClick={() => {
-                      setSize(opt.id);
-                      showToast(`📏 Chọn kích cỡ: ${opt.label} (${opt.volume})`);
-                    }}
-                    className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all duration-300 active:scale-95 cursor-pointer relative overflow-hidden ${
-                      isActive 
-                        ? 'bg-brand-coffee border-brand-coffee text-white shadow-md' 
-                        : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200'
-                    }`}
-                  >
-                    <span className={`text-xl mb-1.5 transition-transform ${isActive ? 'scale-110' : 'opacity-70'}`}>
-                      {opt.id === 'S' ? '☕' : opt.id === 'M' ? '🥤' : '🥛'}
-                    </span>
-                    <span className="text-xs font-extrabold">{opt.label}</span>
-                    <span className={`text-[10px] mt-0.5 ${isActive ? 'text-orange-200' : 'text-gray-400'} font-bold`}>
-                      {opt.volume}
-                    </span>
-                    {isActive && (
-                      <div className="absolute top-1.5 right-1.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
-                        <Check size={8} className="text-white" strokeWidth={4} />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* Interactive Drink Options (Only for DRINK products) */}
+          {productType === 'DRINK' && (
+            <>
+              {/* Interactive Size Option */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Coffee size={14} className="text-brand-coffee" /> {t('detail_select_size', 'Chọn kích cỡ')}
+                  </h3>
+                  <span className="text-[10px] text-[#5F3D2E] font-extrabold bg-[#F6E1B7] px-2.5 py-0.5 rounded-md">{t('common_required', 'Bắt buộc')}</span>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  {SIZE_OPTIONS.map((opt) => {
+                    const isActive = size === opt.id;
+                    return (
+                      <button 
+                        key={opt.id}
+                        onClick={() => {
+                          setSize(opt.id);
+                          showToast(`Kích cỡ: ${opt.label} (${opt.volume})`);
+                        }}
+                        className={`flex flex-col items-center justify-center py-2.5 px-3 rounded-xl border-2 transition-all duration-300 active:scale-95 cursor-pointer relative overflow-hidden ${
+                          isActive 
+                            ? 'bg-[#F6E1B7] border-[#C89C76] text-[#5F3D2E] shadow-sm' 
+                            : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200'
+                        }`}
+                      >
+                        <div className={`w-7.5 h-7.5 rounded-full flex items-center justify-center font-black text-xs mb-1.5 transition-all duration-300 ${
+                          isActive ? 'bg-[#5F3D2E] text-white' : 'bg-gray-50 text-gray-400'
+                        }`}>
+                          {opt.id}
+                        </div>
+                        <span className="text-xs font-extrabold">{opt.id === 'S' ? t('size_s', 'Nhỏ') : opt.id === 'M' ? t('size_m', 'Vừa') : t('size_l', 'Lớn')}</span>
+                        <span className={`text-[10px] mt-0.5 ${isActive ? 'text-[#8D6E63]' : 'text-gray-400'} font-bold`}>
+                          {opt.volume}
+                        </span>
+                        {isActive && (
+                          <div className="absolute top-1.5 right-1.5 w-4 h-4 bg-[#E53E3E] rounded-full flex items-center justify-center">
+                            <Check size={8} className="text-white" strokeWidth={4} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Interactive Temperature Option (Ice/Hot Toggle) */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                🌡️ Chọn nhiệt độ
-              </h3>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              {TEMP_OPTIONS.map((opt) => {
-                const isActive = temperature === opt.id;
-                return (
-                  <button 
-                    key={opt.id}
-                    onClick={() => {
-                      setTemperature(opt.id);
-                      showToast(`🌡️ Chuyển nhiệt độ: ${opt.label}`);
-                    }}
-                    className={`flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl border-2 transition-all duration-300 active:scale-95 cursor-pointer ${
-                      isActive 
-                        ? 'bg-brand-coffee border-brand-coffee text-white shadow-md' 
-                        : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200'
-                    }`}
-                  >
-                    <span className="text-xs font-extrabold">{opt.label}</span>
-                    {isActive && (
-                      <div className="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center shrink-0">
-                        <Check size={8} className="text-white" strokeWidth={4} />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              {/* Interactive Temperature Option (Ice/Hot Toggle) */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Thermometer size={14} className="text-brand-coffee" /> {t('detail_select_temp', 'Chọn nhiệt độ')}
+                  </h3>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  {TEMP_OPTIONS.map((opt) => {
+                    const isActive = temperature === opt.id;
+                    return (
+                      <button 
+                        key={opt.id}
+                        onClick={() => {
+                          setTemperature(opt.id);
+                          showToast(`Nhiệt độ: ${opt.label}`);
+                        }}
+                        className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 transition-all duration-300 active:scale-95 cursor-pointer ${
+                          isActive 
+                            ? 'bg-[#F6E1B7] border-[#C89C76] text-[#5F3D2E] shadow-sm' 
+                            : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200'
+                        }`}
+                      >
+                        <span className="text-xs font-extrabold">{opt.id === 'ice' ? t('temp_ice', 'Uống Đá') : t('temp_hot', 'Uống Nóng')}</span>
+                        {isActive && (
+                          <div className="w-4 h-4 bg-[#E53E3E] rounded-full flex items-center justify-center shrink-0">
+                            <Check size={8} className="text-white" strokeWidth={4} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Interactive Sweetness Option (Sweetness Levels) */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                🍬 Chọn mức đường
-              </h3>
-              <span className="text-xs bg-orange-100 text-brand-primary px-2.5 py-0.5 rounded-full font-extrabold">
-                {sweetness}% Đường
-              </span>
-            </div>
-            
-            <div className="bg-brand-gray/60 p-1 rounded-2xl flex border border-gray-100/50">
-              {SWEETNESS_OPTIONS.map((opt) => {
-                const isActive = sweetness === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => {
-                      setSweetness(opt.id);
-                      showToast(`🍬 Đã chọn mức đường: ${opt.label}`);
-                    }}
-                    className={`flex-1 py-2.5 text-xs font-extrabold rounded-xl transition-all duration-300 active:scale-95 ${
-                      isActive ? 'bg-brand-coffee text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {opt.id === 0 ? '0%' : `${opt.id}%`}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              {/* Interactive Sweetness Option (Sweetness Levels) */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-brand-coffee" /> {t('detail_select_sugar', 'Chọn mức đường')}
+                  </h3>
+                  <span className="text-xs bg-[#F6E1B7] text-[#5F3D2E] px-2.5 py-0.5 rounded-full font-extrabold">
+                    {sweetness}% {t('sugar_label', 'Đường')}
+                  </span>
+                </div>
+                
+                <div className="bg-brand-gray/60 p-1 rounded-xl flex border border-gray-100/50">
+                  {SWEETNESS_OPTIONS.map((opt) => {
+                    const isActive = sweetness === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          setSweetness(opt.id);
+                          showToast(`Mức đường: ${opt.label}`);
+                        }}
+                        className={`flex-1 py-2 text-xs font-extrabold rounded-lg transition-all duration-300 active:scale-95 ${
+                          isActive ? 'bg-[#F6E1B7] text-[#5F3D2E] shadow-sm font-black' : 'text-gray-500 hover:text-gray-700 font-bold'
+                        }`}
+                      >
+                        {opt.id === 0 ? '0%' : `${opt.id}%`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* Interactive Milk Option Slider */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                🥛 Lượng sữa đặc biệt
-              </h3>
-              <span className="text-xs bg-orange-100 text-brand-primary px-2.5 py-0.5 rounded-full font-extrabold">
-                {getMilkLabel(milkLevel)} ({milkLevel}%)
-              </span>
-            </div>
-            
-            <div className="relative w-full h-2.5 bg-gray-200 rounded-full mt-4">
-              <div 
-                className="absolute top-0 left-0 h-full bg-gradient-to-r from-orange-300 to-brand-primary rounded-full transition-all" 
-                style={{ width: `${milkLevel}%` }}
-              ></div>
-              <input 
-                type="range" min="0" max="100" step="25"
-                value={milkLevel} 
-                onChange={(e) => {
-                  const val = parseInt(e.target.value);
-                  setMilkLevel(val);
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-              />
-              
-              {/* Slider Tick points */}
-              {[0, 25, 50, 75, 100].map((tick) => (
-                <div 
-                  key={tick}
-                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-white rounded-full z-10 -translate-x-1/2"
-                  style={{ left: `${tick}%` }}
-                ></div>
-              ))}
-              
-              {/* Circular handle */}
-              <div 
-                className="absolute top-1/2 w-6 h-6 bg-white border-2 border-brand-primary rounded-full -translate-y-1/2 -translate-x-1/2 shadow-md pointer-events-none transition-all duration-100 z-10"
-                style={{ left: `${milkLevel}%` }}
-              ></div>
-            </div>
-            
-            <div className="flex justify-between text-[10px] font-bold text-gray-400 mt-2 px-1">
-              <span>Không sữa</span>
-              <span>Ít sữa</span>
-              <span>Vừa đủ</span>
-              <span>Nhiều sữa</span>
-              <span>Đậm đặc</span>
-            </div>
-          </div>
+              {/* Interactive Milk Option Slider */}
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-brand-dark font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Coffee size={14} className="text-brand-coffee" /> Lượng sữa đặc biệt
+                  </h3>
+                  <span className="text-xs bg-[#F6E1B7] text-[#5F3D2E] px-2.5 py-0.5 rounded-full font-extrabold">
+                    {getMilkLabel(milkLevel)} ({milkLevel}%)
+                  </span>
+                </div>
+                
+                <div className="relative w-full h-2 bg-gray-200 rounded-full mt-4">
+                  <div 
+                    className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#F6E1B7] to-[#E53E3E] rounded-full transition-all" 
+                    style={{ width: `${milkLevel}%` }}
+                  ></div>
+                  <input 
+                    type="range" min="0" max="100" step="25"
+                    value={milkLevel} 
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      setMilkLevel(val);
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                  />
+                  
+                  {/* Slider Tick points */}
+                  {[0, 25, 50, 75, 100].map((tick) => (
+                    <div 
+                      key={tick}
+                      className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-white rounded-full z-10 -translate-x-1/2"
+                      style={{ left: `${tick}%` }}
+                    ></div>
+                  ))}
+                  
+                  {/* Circular handle */}
+                  <div 
+                    className="absolute top-1/2 w-5 h-5 bg-white border-2 border-[#E53E3E] rounded-full -translate-y-1/2 -translate-x-1/2 shadow-md pointer-events-none transition-all duration-100 z-10"
+                    style={{ left: `${milkLevel}%` }}
+                  ></div>
+                </div>
+                
+                <div className="flex justify-between text-[10px] font-bold text-gray-400 mt-2 px-1">
+                  <span>Không sữa</span>
+                  <span>Ít sữa</span>
+                  <span>Vừa đủ</span>
+                  <span>Nhiều sữa</span>
+                  <span>Đậm đặc</span>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Description Section */}
           <div className="mb-8">
@@ -477,9 +519,9 @@ export const ProductDetail: React.FC = () => {
                                      milkLevel: 50
                                    };
                                    addToCart(cartItem);
-                                   showToast(`🎉 Thêm thành công ly ${item.name}!`);
+                                   showToast(`Thêm thành công ly ${item.name}!`);
                                 }}
-                                className="w-6.5 h-6.5 bg-brand-coffee hover:bg-brand-primary text-white rounded-xl flex items-center justify-center shadow-md active:scale-85 transition-all shrink-0"
+                                className="w-6.5 h-6.5 bg-[#E53E3E] hover:bg-[#D32F2F] text-white rounded-xl flex items-center justify-center shadow-md active:scale-85 transition-all shrink-0"
                               >
                                  <Plus size={13} strokeWidth={3} />
                               </button>
@@ -494,60 +536,66 @@ export const ProductDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Dynamic Floating Action Bar (Sticky Bottom) */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 pt-4 bg-white/90 backdrop-blur-xl border-t border-gray-100 shadow-[0_-10px_40px_rgba(0,0,0,0.06)] z-30 flex items-center justify-between">
+      {/* Dynamic Floating Action Bar (Sticky Bottom) - Slim and Premium */}
+      <div className="absolute bottom-0 left-0 right-0 px-4 py-3 pb-6 bg-white/90 backdrop-blur-xl border-t border-gray-100 shadow-[0_-8px_30px_rgba(0,0,0,0.05)] z-30 flex items-center justify-between">
          
          {/* Circular Quantity Selector */}
-         <div className="flex items-center space-x-4 bg-gray-50 px-4 py-3.5 rounded-[22px] border border-gray-100">
+         <div className="flex items-center space-x-3 bg-gray-50 px-2.5 py-1.5 rounded-full border border-gray-100 shadow-xs shrink-0">
             <button 
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-8 h-8 flex items-center justify-center text-brand-dark hover:bg-gray-200 rounded-full active:scale-80 transition-all bg-white border border-gray-100 shadow-sm"
+              className="w-7.5 h-7.5 flex items-center justify-center text-brand-dark hover:bg-gray-200 rounded-full active:scale-80 transition-all bg-white border border-gray-100 shadow-xs"
             >
-               <Minus size={16} strokeWidth={2.5} />
+               <Minus size={13} strokeWidth={3} />
             </button>
-            <span className="text-lg font-black text-brand-dark w-4 text-center">{quantity}</span>
+            <span className="text-sm font-black text-brand-dark w-4 text-center">{quantity}</span>
             <button 
               onClick={() => setQuantity(quantity + 1)}
-              className="w-8 h-8 flex items-center justify-center text-brand-dark hover:bg-gray-200 rounded-full active:scale-80 transition-all bg-white border border-gray-100 shadow-sm"
+              className="w-7.5 h-7.5 flex items-center justify-center text-brand-dark hover:bg-gray-200 rounded-full active:scale-80 transition-all bg-white border border-gray-100 shadow-xs"
             >
-               <Plus size={16} strokeWidth={2.5} />
+               <Plus size={13} strokeWidth={3} />
             </button>
          </div>
 
          {/* Call to action (Add to Cart button with price) */}
          <button 
             onClick={handleAddToCart}
-            className="flex-1 ml-4 bg-brand-primary text-white py-4 px-6 rounded-[22px] font-black text-sm shadow-float active:scale-[0.96] transition-all flex justify-between items-center relative overflow-hidden group"
+            className="flex-1 ml-3 bg-[#E53E3E] text-white py-2.5 px-4 rounded-full font-black text-[12px] shadow-md active:scale-[0.96] transition-all flex justify-between items-center relative overflow-hidden group"
          >
             <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-            <span>THÊM VÀO GIỎ HÀNG</span>
-            <span className="font-extrabold bg-white/15 px-3 py-1 rounded-xl">{(currentPrice * quantity).toLocaleString()}đ</span>
+            <span className="tracking-wide">{t('detail_add_to_cart', 'THÊM VÀO GIỎ HÀNG')}</span>
+            <span className="font-extrabold bg-white/20 px-2.5 py-0.5 rounded-lg text-[11px]">{(currentPrice * quantity).toLocaleString()}đ</span>
          </button>
       </div>
 
       {/* Standard simple toast */}
       {toastMessage && (
-        <div className="fixed bottom-28 left-6 right-6 bg-brand-dark/95 text-brand-cream px-5 py-3.5 rounded-2xl shadow-xl flex items-center gap-3 z-50 animate-fade-in border border-brand-coffee/20">
-           <span className="text-base">🔔</span>
+        <div className="fixed bottom-24 left-6 right-6 bg-brand-dark/95 text-brand-cream px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 z-50 animate-fade-in border border-brand-coffee/20">
+           <Info size={14} className="text-[#F6E1B7] shrink-0" />
            <p className="text-xs font-bold leading-tight">{toastMessage}</p>
         </div>
       )}
 
       {/* Premium Product Add Toast Popup Modal */}
       {showSuccessToast && (
-        <div className="fixed inset-x-6 bottom-28 bg-brand-dark/95 backdrop-blur-md text-brand-cream p-5 rounded-3xl shadow-2xl flex flex-col gap-4 z-50 animate-fade-in border border-brand-coffee/20">
+        <div className="fixed inset-x-6 bottom-24 bg-brand-dark/95 backdrop-blur-md text-brand-cream p-5 rounded-3xl shadow-2xl flex flex-col gap-4 z-50 animate-fade-in border border-brand-coffee/20">
            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 bg-orange-500 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-md">
-                 🎉
+              <div className="w-10 h-10 bg-[#E53E3E] rounded-2xl flex items-center justify-center shrink-0 shadow-md text-white">
+                 <Check size={20} strokeWidth={3} />
               </div>
               <div className="min-w-0 flex-1">
-                 <h4 className="text-sm font-extrabold text-white">Đã thêm vào giỏ hàng!</h4>
+                 <h4 className="text-sm font-extrabold text-white">{t('detail_added_success', 'Đã thêm vào giỏ hàng!')}</h4>
                  <p className="text-[11px] text-gray-300 mt-1 leading-snug truncate">
-                    Món: <span className="font-extrabold text-orange-200">{product.name}</span>
+                    {t('detail_added_item_label', 'Món')}: <span className="font-extrabold text-orange-200">{product.name}</span>
                  </p>
-                 <p className="text-[9px] text-gray-400 mt-0.5">
-                    Size {size} • {getMilkLabel(milkLevel)} • {sweetness}% Đường • {temperature === 'ice' ? 'Uống Đá 🧊' : 'Uống Nóng 🔥'}
-                 </p>
+                  {productType === 'DRINK' ? (
+                    <p className="text-[9px] text-gray-400 mt-0.5">
+                      Size {size} • {getMilkLabel(milkLevel)} • {sweetness}% Đường • {temperature === 'ice' ? t('temp_ice', 'Uống Đá') : t('temp_hot', 'Uống Nóng')}
+                    </p>
+                  ) : (
+                    <p className="text-[9px] text-gray-400 mt-0.5">
+                      Sản phẩm local • Số lượng: {quantity}
+                    </p>
+                  )}
               </div>
            </div>
            
@@ -558,16 +606,16 @@ export const ProductDetail: React.FC = () => {
                 }}
                 className="flex-1 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-extrabold border border-white/10 active:scale-95 transition-all"
               >
-                 Chọn tiếp
+                 {t('detail_continue_shopping', 'Chọn tiếp')}
               </button>
               <button 
                 onClick={() => {
                    setShowSuccessToast(false);
                    navigate('/cart');
                 }}
-                className="flex-1 py-2.5 bg-brand-primary hover:bg-brand-primary/90 text-white rounded-xl text-xs font-extrabold shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 bg-[#E53E3E] hover:bg-[#D32F2F] text-white rounded-xl text-xs font-extrabold shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
               >
-                 <ShoppingCart size={13} strokeWidth={2.5} /> Vào giỏ hàng
+                 <ShoppingCart size={13} strokeWidth={2.5} /> {t('nav_cart', 'Giỏ hàng')}
               </button>
            </div>
         </div>

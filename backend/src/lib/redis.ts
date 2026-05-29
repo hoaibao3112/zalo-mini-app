@@ -1,14 +1,22 @@
 import { Redis } from 'ioredis';
 
-const globalForRedis = globalThis as unknown as { redis: Redis };
-
-export const redis =
-  globalForRedis.redis ||
-  new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+/**
+ * App cache connection — dùng cho rate limiting, caching, idempotency keys
+ * maxRetriesPerRequest: 3 là phù hợp cho các request thông thường
+ */
+export const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: 3,
     lazyConnect: true,
-  });
+});
 
-if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
+/**
+ * BullMQ connection — PHẢI dùng riêng với maxRetriesPerRequest: null
+ * BullMQ Worker sẽ throw error nếu dùng connection có maxRetriesPerRequest !== null
+ * @see https://docs.bullmq.io/guide/connections
+ */
+export const bullmqConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    maxRetriesPerRequest: null, // bắt buộc với BullMQ
+    enableReadyCheck: false,
+});
 
 export default redis;

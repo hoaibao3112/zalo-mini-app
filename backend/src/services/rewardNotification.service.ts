@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.js';
 import { ZaloApiClient } from '../lib/zaloApi.js';
 import redis from '../lib/redis.js';
+import { logger } from '../lib/logger.js';
 
 // Hằng số cấu hình
 const IDEMPOTENCY_KEY_TTL_SECONDS = 86400; // 24 giờ — sau đó cho phép gửi lại nếu thực sự cần
@@ -102,12 +103,19 @@ export const rewardNotificationService = {
             const wasAlreadySent = await redis.set(idempotencyKey, '1', 'EX', IDEMPOTENCY_KEY_TTL_SECONDS, 'NX');
             if (wasAlreadySent === null) {
                 // Key đã tồn tại → đã gửi trước đó → bỏ qua
-                console.log(`[RewardNotification] Bỏ qua — rewardId ${rewardId} đã được gửi thông báo trước đó.`);
+                logger.info(
+                    { correlationId: '', workspaceId, customerId, action: 'REWARD_NOTIF_IDEMPOTENCY_SKIP' },
+                    `Bỏ qua — rewardId ${rewardId} đã được gửi thông báo trước đó.`
+                );
                 return;
             }
-        } catch (redisErr: any) {
+        } catch (redisErr) {
             // Redis lỗi → cho phép gửi tiếp (fail-open), tránh chặn người dùng
-            console.error('[RewardNotification] Không thể kiểm tra idempotency key Redis:', redisErr.message);
+            logger.error(
+                { correlationId: '', workspaceId, customerId, action: 'REWARD_NOTIF_REDIS_ERROR' },
+                'Không thể kiểm tra idempotency key Redis:',
+                redisErr
+            );
         }
 
         try {
@@ -120,8 +128,9 @@ export const rewardNotificationService = {
             const targetZaloUserId = customerObj?.zaloOaId || customerObj?.zaloId;
 
             if (!activeOA || !targetZaloUserId) {
-                console.warn(
-                    `[RewardNotification] Bỏ qua — không tìm thấy OA hoặc Zalo User ID cho customerId ${customerId}`
+                logger.warn(
+                    { correlationId: '', workspaceId, customerId, action: 'REWARD_NOTIF_MISSING_TARGET' },
+                    `Bỏ qua — không tìm thấy OA hoặc Zalo User ID cho customerId ${customerId}`
                 );
                 return;
             }
@@ -150,15 +159,22 @@ export const rewardNotificationService = {
             // 5. Gửi với retry exponential backoff
             await withRetry(() => client.sendText(targetZaloUserId, msgText));
 
-            console.log(`[RewardNotification] Đã gửi thông báo trúng thưởng tới ${targetZaloUserId}`);
-        } catch (error: any) {
+            logger.info(
+                { correlationId: '', workspaceId, customerId, action: 'REWARD_NOTIF_SENT' },
+                `Đã gửi thông báo trúng thưởng tới ${targetZaloUserId}`
+            );
+        } catch (error) {
             // Gửi thất bại sau retry → xóa idempotency key để cho phép thử lại sau
             try {
                 await redis.del(idempotencyKey);
             } catch {
                 // Ignore — Redis có thể offline
             }
-            console.error('[RewardNotification] Gửi thông báo trúng thưởng thất bại sau tất cả retry:', error.message);
+            logger.error(
+                { correlationId: '', workspaceId, customerId, action: 'REWARD_NOTIF_FAILED' },
+                'Gửi thông báo trúng thưởng thất bại sau tất cả retry:',
+                error
+            );
         }
     }
 };

@@ -3,7 +3,7 @@
  * Tương ứng với backend/src/types/ecom.types.ts
  */
 
-export type EcomPlatform = 'NHANH' | 'HARAVAN';
+export type EcomPlatform = 'NHANH' | 'HARAVAN' | 'LOCAL';
 
 export interface EcomVariant {
     id: number;
@@ -42,8 +42,10 @@ export interface EcomCreateOrderPayload {
     externalProductId: number;
     externalVariantId?: number;
     quantity: number;
-    shippingAddress: EcomShippingAddress;
+    unitPrice?: number;
+    shippingAddress?: EcomShippingAddress; // optional cho LOCAL
     note?: string;
+    paymentMethod?: 'COD' | 'ONLINE';
 }
 
 export interface EcomOrderResult {

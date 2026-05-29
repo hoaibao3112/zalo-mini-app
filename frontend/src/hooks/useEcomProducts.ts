@@ -29,10 +29,22 @@ export function useEcomProducts(options: UseEcomProductsOptions = {}): UseEcomPr
         setError(null);
         try {
             const res = await api.getEcomProducts(source, page, limit, keyword);
-            if (res?.success) {
-                setProducts(res.data || []);
-            } else {
-                setError(res?.error || 'Không thể tải sản phẩm');
+            
+            // Nếu res là mảng sản phẩm đã unwrap thành công
+            if (Array.isArray(res)) {
+                setProducts(res);
+            } 
+            // Nếu res là raw response chứa trường data
+            else if (res && Array.isArray(res.data)) {
+                setProducts(res.data);
+            } 
+            // Nếu có lỗi rõ ràng từ response
+            else if (res && res.success === false) {
+                setError(res.error || res.message || 'Không thể tải sản phẩm');
+            } 
+            // Lỗi không xác định
+            else {
+                setError('Không thể tải sản phẩm');
             }
         } catch (err) {
             setError('Lỗi kết nối. Vui lòng thử lại.');

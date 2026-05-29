@@ -13,6 +13,7 @@ router.use(miniappRateLimit as any);
 
 // Áp dụng verifyZaloToken middleware cho các routes nhạy cảm
 router.post('/spin-games/:id/spin', verifyZaloToken as any);
+router.post('/spin-games/:id/exchange-points', verifyZaloToken as any);
 router.post('/spin-credits/add', verifyZaloToken as any);
 router.get('/spin-credits/:customerId/history', verifyZaloToken as any);
 router.get('/spin-rewards/:customerId', verifyZaloToken as any);

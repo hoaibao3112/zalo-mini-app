@@ -19,6 +19,7 @@ interface AuthContextType {
     authError: string | null;
     login: () => Promise<void>;
     logout: () => void;
+    updateUser: (updatedUser: any) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -57,7 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [authError, setAuthError] = useState<string | null>(null);
     const loginInProgress = React.useRef(false);
 
-    const isDev = import.meta.env.MODE === 'development';
+    // FIX: Lock Mock Token in Production
+    const isDev = !!import.meta.env.DEV;
 
     useEffect(() => {
         setIsLoading(false);
@@ -72,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             let zaloInfo = await getZaloUserInfo();
 
             if (!zaloInfo) {
-                if (isDev) {
+                if (import.meta.env.DEV) {
                     console.warn("Zalo SDK Login failed (development mode). Kích hoạt tài khoản Mock để chạy thử...");
                     zaloInfo = {
                         zaloId: "mock-zalo-id-aizen-test",
@@ -82,17 +84,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         birthday: "1998-08-08"
                     };
                 } else {
-                    throw new Error("Không thể lấy thông tin đăng nhập từ ứng dụng Zalo.");
+                    throw new Error('Zalo SDK authentication required');
                 }
             }
 
             // Lấy accessToken từ Mini App (sẽ gửi lên backend để backend đặt httpOnly cookie)
-            const accessToken = await getAccessToken({}).catch((err) => {
-                if (isDev) {
+            const rawAccessToken = await getAccessToken({}).catch((err) => {
+                if (import.meta.env.DEV) {
                     return undefined;
                 }
                 throw new Error("Không thể lấy Access Token đăng nhập Zalo: " + (err.message || 'Lỗi không xác định'));
             });
+
+            // Fallback sang mock token nếu đang ở chế độ dev/test để vượt qua xác thực
+            const accessToken = rawAccessToken || (import.meta.env.DEV ? 'mock-access-token-aizen-test' : undefined);
 
             // Gọi API để tạo/lấy customer trong cơ sở dữ liệu thật qua Backend
             const res = await api.authZalo({
@@ -115,9 +120,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     throw new Error(res?.message || 'Xác thực tài khoản với máy chủ thất bại.');
                 }
             }
-            } catch (error: any) {
+        } catch (error: any) {
             console.error('Login error:', error);
-            if (isDev) {
+            if (import.meta.env.DEV) {
                 setUser({
                     id: "mock-cuid-for-offline-test",
                     zaloId: "mock-zalo-id-aizen-test",
@@ -140,6 +145,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
     }
 
+    const updateUser = (updatedUser: any) => {
+        setUser(updatedUser);
+    };
+
     return (
         <AuthContext.Provider value={{
             user,
@@ -147,7 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             isLoggedIn: !!user,
             authError,
             login,
-            logout
+            logout,
+            updateUser
         }}>
             {children}
         </AuthContext.Provider>

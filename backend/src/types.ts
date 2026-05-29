@@ -9,4 +9,6 @@ export interface MiniappRequest extends Request {
     customer?: Customer;        // Customer CRM Record được middleware verifyCustomerOwnership điền
     correlationId?: string;     // correlationId được gán vào request để bám vết logger
     zaloId?: string;            // zaloId lấy từ verified Zalo Access Token
+    customerId?: string;        // [PATCH-002] ID khách hàng từ custom JWT
+    accountId?: string;         // [PATCH-002] ID doanh nghiệp từ custom JWT
 }

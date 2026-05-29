@@ -188,6 +188,87 @@ router.post('/spin-games/:id/spin', async (req: MiniappRequest, res: Response) =
 });
 
 /**
+ * POST /spin-games/:id/exchange-points
+ * Đổi 5 Hạt Cà Phê (global PlayCredit) lấy 1 lượt quay (GamePlayerCredit)
+ */
+router.post('/spin-games/:id/exchange-points', async (req: MiniappRequest, res: Response) => {
+    try {
+        const customerId = req.customer!.id;
+        const gameId = req.params.id;
+        const workspaceId = req.workspaceId!;
+
+        // 1. Kiểm tra game có hợp lệ và đang hoạt động không
+        const game = await prisma.game.findFirst({
+            where: { id: gameId, accountId: workspaceId, isActive: true }
+        });
+
+        if (!game) {
+            return res.status(404).json(errorResponse('GAME_NOT_FOUND', 'Chương trình vòng quay không hoạt động'));
+        }
+
+        // 2. Chạy giao dịch nguyên tử (Atomic transaction) đổi điểm
+        const exchangeResult = await prisma.$transaction(async (tx) => {
+            // Kiểm tra điểm tích lũy và trừ điểm (chống race condition)
+            const updatedPoints = await tx.playCredit.updateMany({
+                where: { customerId, balance: { gte: 5 } },
+                data: {
+                    balance: { decrement: 5 },
+                    totalUsed: { increment: 5 }
+                }
+            });
+
+            if (updatedPoints.count === 0) {
+                throw new Error('INSUFFICIENT_POINTS');
+            }
+
+            // Tăng lượt quay trong game (Upsert GamePlayerCredit)
+            const gameInitial = Number(game.initialSpins) || 0;
+            const updatedSpins = await tx.gamePlayerCredit.upsert({
+                where: { customerId_gameId: { customerId, gameId } },
+                create: {
+                    customerId,
+                    gameId,
+                    balance: gameInitial + 1,
+                    totalEarned: gameInitial + 1
+                },
+                update: {
+                    balance: { increment: 1 },
+                    totalEarned: { increment: 1 }
+                }
+            });
+
+            // Ghi nhận lịch sử đổi điểm vào PlayCreditLog
+            await tx.playCreditLog.create({
+                data: {
+                    customerId,
+                    amount: -5,
+                    type: 'EXCHANGE_SPIN',
+                    reference: gameId
+                }
+            });
+
+            // Lấy lại ví điểm hạt cà phê đã cập nhật để hiển thị chính xác số dư
+            const finalCredit = await tx.playCredit.findUnique({
+                where: { customerId }
+            });
+
+            return {
+                remainingPoints: finalCredit?.balance || 0,
+                remainingSpins: updatedSpins.balance
+            };
+        });
+
+        return res.json(successResponse(exchangeResult, 'Đổi lượt quay thành công! Đã trừ 5 hạt cà phê.'));
+    } catch (error: any) {
+        if (error.message === 'INSUFFICIENT_POINTS') {
+            return res.status(400).json(errorResponse('INSUFFICIENT_POINTS', 'Bạn không đủ hạt cà phê để đổi lượt quay (yêu cầu tối thiểu 5 hạt)'));
+        }
+        console.error('[MiniappGame] Lỗi đổi lượt quay:', error);
+        return res.status(500).json(errorResponse('EXCHANGE_FAILED', 'Hệ thống bận, vui lòng thử lại sau'));
+    }
+});
+
+/**
  * GET /spin-games/:id/player-credits/:customerId
  * Lấy số lượt chơi per-game hiện tại của người dùng
  */

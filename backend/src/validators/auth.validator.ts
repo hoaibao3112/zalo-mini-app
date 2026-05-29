@@ -33,13 +33,18 @@ export const updatePhoneSchema = z.object({
 });
 
 export const updateCustomerSchema = z.object({
+    name: z.string().min(1, 'Họ tên không được để trống').optional().nullable(),
     phone: z.string()
         .transform(val => normalizePhoneNumber(val))
         .refine(val => !val || /^[0-9]{10}$/.test(val), 'Số điện thoại phải gồm 10 chữ số (VD: 0912345678)')
         .optional()
         .nullable(),
     gender: z.number().int().min(0).max(1).optional().nullable(),
-    birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày sinh phải có định dạng YYYY-MM-DD').optional().nullable()
+    birthday: z.string().optional().nullable(),
+    address: z.string().optional().nullable(),
+    city: z.string().optional().nullable(),
+    district: z.string().optional().nullable(),
+    ward: z.string().optional().nullable()
 });
 
 

@@ -27,6 +27,18 @@ function hashToken(token: string): string {
 }
 
 /**
+ * So sánh chuỗi an toàn chống Timing Attack (Side-Channel)
+ */
+function safeCompare(a: string, b: string): boolean {
+    const aBuf = Buffer.from(a);
+    const bBuf = Buffer.from(b);
+    if (aBuf.length !== bBuf.length) {
+        return false;
+    }
+    return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+/**
  * Interface cho dữ liệu lưu trong verified_token cache
  */
 interface VerifiedTokenData {
@@ -74,19 +86,25 @@ export const verifyZaloToken = async (
         );
     }
 
-    // HỖ TRỢ THỬ NGHIỆM MOCK BYPASS: Chỉ hoạt động trên môi trường development để tránh rủi ro bảo mật
-    // Security: Không cho phép mock token trên production (mục 30.1 docs)
-    const isMockToken = token === 'mock-access-token-aizen-test';
+    // FIX: Lock Mock Token in Production
+    const isMockToken = safeCompare(token, 'mock-access-token-aizen-test') || token.startsWith('mock-access-token');
     if (isMockToken) {
         if (process.env.NODE_ENV === 'production') {
-            logger.warn({ correlationId, workspaceId, action: 'MOCK_TOKEN_ATTEMPT_PROD' }, 'Cảnh báo bảo mật: Phát hiện nỗ lực truy cập bằng Mock Token trên môi trường Production.');
+            logger.warn({
+                correlationId,
+                workspaceId,
+                action: 'MOCK_TOKEN_ATTEMPT_PROD'
+            }, `Cảnh báo bảo mật: Phát hiện nỗ lực truy cập bằng Mock Token từ IP ${req.ip} vào lúc ${new Date().toISOString()} trên môi trường Production.`, {
+                ip: req.ip,
+                timestamp: new Date().toISOString()
+            });
             return void res.status(401).json(
                 errorResponse('UNAUTHORIZED_TOKEN', 'Chế độ giả lập (Mock Token) bị nghiêm cấm trên môi trường Production.', correlationId)
             );
         }
-        
+
         logger.warn({ correlationId, workspaceId, action: 'MOCK_TOKEN_ACCESS_DEV' }, 'Thông báo: Hệ thống đang sử dụng Mock Token phục vụ phát triển/thử nghiệm (Development).');
-        
+
         try {
             let mockCustomer = await prisma.customer.findUnique({
                 where: {
@@ -129,7 +147,7 @@ export const verifyZaloToken = async (
         const cachedVerified = await redis.get(verifiedTokenKey);
         if (cachedVerified) {
             const data = JSON.parse(cachedVerified) as VerifiedTokenData;
-            
+
             // Security: Verify cached accountId matches current workspaceId
             if (data.accountId && data.accountId !== workspaceId) {
                 logger.warn(
@@ -140,7 +158,7 @@ export const verifyZaloToken = async (
                     errorResponse('FORBIDDEN', 'Không có quyền truy cập', correlationId)
                 );
             }
-            
+
             req.zaloId = data.zaloId;
             req.customer = {
                 id: data.customerId,
@@ -181,7 +199,7 @@ export const verifyZaloToken = async (
                 errorResponse('SERVICE_UNAVAILABLE', 'Dịch vụ Zalo đang chậm, vui lòng thử lại sau', correlationId)
             );
         }
-        
+
         logger.error(
             { correlationId, workspaceId, action: 'ZALO_API_VERIFY_ERROR' },
             'Lỗi xác thực token với Zalo API',
@@ -257,7 +275,7 @@ export const verifyZaloToken = async (
 
             // Lưu cache token_map (fail-open)
             await redis.set(tokenMapKey, JSON.stringify(customerData), 'EX', TOKEN_MAP_TTL)
-                .catch(() => {});
+                .catch(() => { });
         } catch (dbErr) {
             logger.error(
                 { correlationId, workspaceId, action: 'CUSTOMER_DB_LOOKUP_ERROR' },

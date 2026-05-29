@@ -213,24 +213,34 @@ model CustomerGroup {
 }
 
 model Order {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   accountId       String
   customerId      String
   items           String
   total           Float
-  status          String   @default("pending")
-  createdAt       DateTime @default(now())
+  status          String    @default("pending")
+  deliveryType    String    @default("DELIVERY") // "DELIVERY" | "PICKUP"
+  pickupTime      DateTime?
+  note            String?
+  createdAt       DateTime  @default(now())
   errorMessage    String?
   externalOrderId String?
-  idempotencyKey  String?  @unique
-  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  customer        Customer @relation(fields: [customerId], references: [id])
+  idempotencyKey  String?   @unique
+  account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  customer        Customer  @relation(fields: [customerId], references: [id])
+
+  // Payment online fields
+  paymentMethod   String    @default("COD") // "COD" | "ONLINE"
+  paymentCode     BigInt?   @unique         // Mã số dạng INT duy nhất gửi sang PayOS
+  paymentStatus   String    @default("UNPAID") // "UNPAID" | "PAID" | "EXPIRED"
+  paymentUrl      String?                   // Đường dẫn thanh toán PayOS
+  paymentLinkId   String?                   // ID link thanh toán từ PayOS
 
   @@index([accountId])
   @@index([customerId])
   @@index([accountId, status])
   @@index([accountId, createdAt])
-  @@index([externalOrderId])
+  @@index([paymentCode])
 }
 
 model Game {

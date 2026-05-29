@@ -105,6 +105,8 @@ export function SpinGamePage() {
 
     // Spin Credits
     const [credits, setCredits] = useState<SpinCredit | null>(null);
+    const [coffeePoints, setCoffeePoints] = useState<number>(0);
+    const [exchanging, setExchanging] = useState(false);
     const [rules, setRules] = useState<SpinCreditRule[]>([]);
     const [rewards, setRewards] = useState<SpinReward[]>([]);
     const [activeTab, setActiveTab] = useState<'game' | 'rewards' | 'howto'>('game');
@@ -177,8 +179,39 @@ export function SpinGamePage() {
         try {
             const data = await api.getGamePlayerCredits(game.id, user.id);
             setCredits(data);
+            
+            // Tải số lượng Hạt Cà Phê tích lũy (Ví điểm PlayCredit)
+            const globalCredit = await api.getSpinCredits(user.id);
+            if (globalCredit) {
+                setCoffeePoints(globalCredit.balance || 0);
+            }
         } catch (error) {
             console.error('Error loading credits:', error);
+        }
+    }
+
+    async function handleExchangePoints() {
+        if (!game || !user || exchanging) return;
+        if (coffeePoints < 5) {
+            alert('Bạn cần tối thiểu 5 Hạt Cà Phê để đổi lượt quay!');
+            return;
+        }
+        setExchanging(true);
+        try {
+            const response = await api.exchangePoints(game.id);
+            if (response && response.remainingPoints !== undefined) {
+                setCoffeePoints(response.remainingPoints);
+                setCredits(prev => prev ? { ...prev, balance: response.remainingSpins } : null);
+                alert('🎉 Đổi lượt quay thành công! Đã trừ 5 Hạt Cà Phê.');
+                loadRewards();
+            } else {
+                alert(response?.error || 'Không thể đổi lượt quay, vui lòng thử lại sau.');
+            }
+        } catch (error: any) {
+            console.error('Exchange points error:', error);
+            alert(error?.error || error?.message || 'Có lỗi xảy ra khi đổi điểm');
+        } finally {
+            setExchanging(false);
         }
     }
 
@@ -512,13 +545,17 @@ export function SpinGamePage() {
             if (result.value) {
                 try {
                     navigator.clipboard.writeText(result.value);
-                    alert(`🎉 Đã tự động sao chép mã ưu đãi: ${result.value}\nBạn hãy dán mã giảm giá này khi điền thông tin đơn hàng nhé!`);
+                    alert(`🎉 Đã tự động sao chép mã ưu đãi: ${result.value}\nBạn hãy chọn đồ uống ở Trang chủ và dán mã giảm giá này khi thanh toán nhé!`);
                 } catch (e) {
                     console.error('Failed to copy', e);
                 }
+                setShowResult(false);
+                navigate('/');
+            } else {
+                alert(`🎉 Chúc mừng bạn đã trúng "${result.name}"!\nBạn có thể kiểm tra danh sách quà tặng tại tab "Phần thưởng" trong trò chơi.`);
+                setShowResult(false);
+                setActiveTab('rewards');
             }
-            setShowResult(false);
-            navigate('/cart');
         }
     };
 
@@ -624,18 +661,38 @@ export function SpinGamePage() {
 
                 {/* LEFT COLUMN: Wheel - always visible on desktop, tab-controlled on mobile */}
                 <div className={`${activeTab !== 'game' ? 'hidden' : 'flex-1 flex flex-col items-center justify-center'} p-4 relative animate-in fade-in duration-300 w-full`}>
-                    {/* Credits Badge */}
+                    {/* Credits & Loyalty Points Badge */}
                     {isLoggedIn && credits && (
-                        <div className="mb-4 lg:mb-6 flex justify-center">
-                            <div className="bg-black/20 backdrop-blur-sm border border-white/20 rounded-full px-5 py-1.5 flex items-center gap-2 shadow-lg">
-                                <Star className="w-4 h-4 text-yellow-300 animate-pulse" fill="currentColor" />
-                                <span 
-                                    className="text-white font-bold text-base"
-                                    style={{ color: game.design?.spinsCountColor || game.design?.textColor || '#ffffff' }}
-                                >
-                                    {credits.balance} lượt
-                                </span>
+                        <div className="mb-4 lg:mb-6 flex flex-col items-center gap-2 z-10">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-black/30 backdrop-blur-md border border-white/20 rounded-full px-4 py-1.5 flex items-center gap-2 shadow-lg">
+                                    <Star className="w-4 h-4 text-yellow-300 animate-pulse" fill="currentColor" />
+                                    <span 
+                                        className="text-white font-bold text-sm"
+                                        style={{ color: game.design?.spinsCountColor || game.design?.textColor || '#ffffff' }}
+                                    >
+                                        {credits.balance} lượt
+                                    </span>
+                                </div>
+                                <div className="bg-black/30 backdrop-blur-md border border-white/20 rounded-full px-4 py-1.5 flex items-center gap-2 shadow-lg">
+                                    <span className="text-orange-400 font-bold">☕</span>
+                                    <span className="text-white font-bold text-sm">
+                                        {coffeePoints} Hạt Cà Phê
+                                    </span>
+                                </div>
                             </div>
+                            
+                            {coffeePoints >= 5 && (
+                                <button
+                                    onClick={handleExchangePoints}
+                                    disabled={exchanging}
+                                    className="mt-1 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-full shadow-md hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 border border-amber-400/30"
+                                >
+                                    {exchanging ? (
+                                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent" />
+                                    ) : '☕ Đổi 5 Hạt = 1 Lượt Quay'}
+                                </button>
+                            )}
                         </div>
                     )}
 

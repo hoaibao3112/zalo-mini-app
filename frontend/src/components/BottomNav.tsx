@@ -1,19 +1,21 @@
 import React from 'react';
 import { Home, ShoppingBag, Heart, User, FileText } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export const BottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
 
   const isActive = (path: string) => location.pathname === path;
 
   const navItems = [
-    { icon: <Home size={22} strokeWidth={2.5} />, path: '/', label: 'Trang chủ' },
-    { icon: <ShoppingBag size={22} strokeWidth={2.5} />, path: '/cart', label: 'Giỏ hàng' },
-    { icon: <FileText size={22} strokeWidth={2.5} />, path: '/orders', label: 'Đơn hàng' },
-    { icon: <Heart size={22} strokeWidth={2.5} />, path: '/favorites', label: 'Yêu thích' },
-    { icon: <User size={22} strokeWidth={2.5} />, path: '/profile', label: 'Hồ sơ' },
+    { icon: <Home size={22} strokeWidth={2.5} />, path: '/', label: t('nav_home') },
+    { icon: <ShoppingBag size={22} strokeWidth={2.5} />, path: '/cart', label: t('nav_cart') },
+    { icon: <FileText size={22} strokeWidth={2.5} />, path: '/orders', label: t('nav_orders') },
+    { icon: <Heart size={22} strokeWidth={2.5} />, path: '/favorites', label: t('nav_favorites') },
+    { icon: <User size={22} strokeWidth={2.5} />, path: '/profile', label: t('nav_profile') },
   ];
 
   return (

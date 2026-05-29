@@ -1,4 +1,5 @@
 import prisma from './prisma.js';
+import { Prisma } from '@prisma/client';
 
 export interface StockReservation {
   id: string;
@@ -21,44 +22,50 @@ export async function reserveStock(
     throw new Error('QUANTITY_MUST_BE_GREATER_THAN_ZERO');
   }
 
-  return await prisma.$transaction(async (tx) => {
-    const products: any[] = await tx.$queryRaw`
-      SELECT * FROM "Product" 
-      WHERE "id" = ${productId} AND "accountId" = ${accountId} 
-      FOR UPDATE
-    `;
+  return await prisma.$transaction(
+    async (tx) => {
+      const products: any[] = await tx.$queryRaw`
+        SELECT * FROM "Product" 
+        WHERE "id" = ${productId} AND "accountId" = ${accountId} 
+        FOR UPDATE
+      `;
 
-    if (!products || products.length === 0) {
-      throw new Error('PRODUCT_NOT_FOUND');
-    }
-
-    const product = products[0];
-
-    const availableStock = product.stock - product.reservedQuantity;
-    if (availableStock < quantity) {
-      throw new Error('INSUFFICIENT_STOCK');
-    }
-
-    await tx.$executeRaw`
-      UPDATE "Product" 
-      SET "reservedQuantity" = "reservedQuantity" + ${quantity},
-          "updatedAt" = NOW()
-      WHERE "id" = ${productId}
-    `;
-
-    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
-    const reservation = await tx.stockReservation.create({
-      data: {
-        productId,
-        accountId,
-        quantity,
-        expiresAt,
-        status: 'PENDING'
+      if (!products || products.length === 0) {
+        throw new Error('PRODUCT_NOT_FOUND');
       }
-    });
 
-    return reservation;
-  });
+      const product = products[0];
+
+      const availableStock = product.stock - product.reservedQuantity;
+      if (availableStock < quantity) {
+        throw new Error('INSUFFICIENT_STOCK');
+      }
+
+      await tx.$executeRaw`
+        UPDATE "Product" 
+        SET "reservedQuantity" = "reservedQuantity" + ${quantity},
+            "updatedAt" = NOW()
+        WHERE "id" = ${productId}
+      `;
+
+      const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+      const reservation = await tx.stockReservation.create({
+        data: {
+          productId,
+          accountId,
+          quantity,
+          expiresAt,
+          status: 'PENDING'
+        }
+      });
+
+      return reservation;
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 5000,
+    }
+  );
 }
 
 export async function confirmStockReservation(

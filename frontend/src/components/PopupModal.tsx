@@ -10,14 +10,72 @@ interface PopupData {
     linkValue: string | null;
 }
 
+function removeGreenBackground(imageUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(imageUrl);
+                return;
+            }
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // Bright green background color: #7AD65B (R: 122, G: 214, B: 91)
+            const targetR = 122;
+            const targetG = 214;
+            const targetB = 91;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i+1];
+                const b = data[i+2];
+                
+                const distance = Math.sqrt(
+                    Math.pow(r - targetR, 2) + 
+                    Math.pow(g - targetG, 2) + 
+                    Math.pow(b - targetB, 2)
+                );
+                
+                if (distance < 95) { // Match a generous range of lime green
+                    data[i+3] = 0; // Set alpha to fully transparent
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => {
+            resolve(imageUrl);
+        };
+        img.src = imageUrl;
+    });
+}
+
 export function PopupModal() {
     const navigate = useNavigate();
     const [popup, setPopup] = useState<PopupData | null>(null);
     const [show, setShow] = useState(false);
+    const [processedImage, setProcessedImage] = useState<string>('');
 
     useEffect(() => {
         loadPopup();
     }, []);
+
+    useEffect(() => {
+        if (popup && popup.image) {
+            const imgSrc = popup.image.startsWith('http') && (popup.image.includes('unsplash') || popup.image.includes('photo-')) 
+                ? '/images/lucky-wheel-banner.png' 
+                : popup.image;
+            removeGreenBackground(imgSrc).then(setProcessedImage);
+        }
+    }, [popup]);
 
     async function loadPopup() {
         try {
@@ -75,13 +133,13 @@ export function PopupModal() {
                 </button>
 
                 <div
-                    className="rounded-2xl overflow-hidden shadow-2xl cursor-pointer"
+                    className="overflow-hidden cursor-pointer bg-transparent"
                     onClick={handleClick}
                 >
                     <img
-                        src={popup.image}
+                        src={processedImage || (popup.image.startsWith('http') && (popup.image.includes('unsplash') || popup.image.includes('photo-')) ? '/images/lucky-wheel-banner.png' : popup.image)}
                         alt={popup.title}
-                        className="w-full aspect-square object-cover"
+                        className="w-full h-auto object-contain bg-transparent block"
                     />
                 </div>
             </div>

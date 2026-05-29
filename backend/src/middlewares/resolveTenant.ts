@@ -133,6 +133,68 @@ export const resolveTenant = async (
 
         // 5. Inject workspaceId vào request
         req.workspaceId = accountId;
+
+        // FIX: Tenant Ownership Check in resolveTenant Middleware
+        const reqWithUser = req as any;
+        if (reqWithUser.user && reqWithUser.user.id) {
+            const userId = reqWithUser.user.id;
+            const memberCacheKey = `tenant:member:${accountId}:${userId}`;
+            
+            try {
+                const cachedMembership = await redis.get(memberCacheKey);
+                if (cachedMembership === 'inactive') {
+                    logger.warn(
+                        { correlationId, workspaceId: accountId, action: 'TENANT_OWNERSHIP_CHECK' },
+                        `[resolveTenant] User ${userId} không có quyền truy cập tenant ${accountId} (từ cache)`
+                    );
+                    return void res.status(403).json(
+                        errorResponse('FORBIDDEN', 'Bạn không có quyền truy cập không gian làm việc này')
+                    );
+                }
+                
+                if (cachedMembership !== 'active') {
+                    const membership = await prisma.accountMember.findUnique({
+                        where: {
+                            workspaceId_userId: {
+                                workspaceId: accountId,
+                                userId: userId
+                            }
+                        },
+                        select: {
+                            status: true
+                        }
+                    });
+                    
+                    if (!membership || membership.status !== 'ACTIVE') {
+                        logger.warn(
+                            { correlationId, workspaceId: accountId, action: 'TENANT_OWNERSHIP_CHECK' },
+                            `[resolveTenant] User ${userId} không thuộc tenant hoặc không active: ${accountId}`
+                        );
+                        try {
+                            await redis.setex(memberCacheKey, 60, 'inactive');
+                        } catch { /* ignore */ }
+                        
+                        return void res.status(403).json(
+                            errorResponse('FORBIDDEN', 'Bạn không có quyền truy cập không gian làm việc này')
+                        );
+                    }
+                    
+                    try {
+                        await redis.setex(memberCacheKey, 60, 'active');
+                    } catch { /* ignore */ }
+                }
+            } catch (memberErr) {
+                logger.error(
+                    { correlationId, workspaceId: accountId, action: 'TENANT_OWNERSHIP_CHECK' },
+                    '[resolveTenant] Lỗi khi kiểm tra quyền sở hữu tenant',
+                    memberErr
+                );
+                return void res.status(503).json(
+                    errorResponse('SERVICE_UNAVAILABLE', 'Dịch vụ tạm thời không khả dụng, vui lòng thử lại sau')
+                );
+            }
+        }
+
         next();
     } catch (dbErr) {
         logger.error(

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, ChevronLeft, ShoppingBag, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Loader2, ChevronLeft, ShoppingBag, CheckCircle2, AlertCircle, Sparkles, Minus, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api, Package } from '../lib/api';
 
@@ -15,6 +15,7 @@ export const ExpressPackagesPage: React.FC = () => {
     // States cho popup xác nhận
     const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
     const [pendingPackage, setPendingPackage] = useState<Package | null>(null);
+    const [quantity, setQuantity] = useState(1);
     const [purchaseNote, setPurchaseNote] = useState('');
     const [purchasing, setPurchasing] = useState(false);
     const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -37,6 +38,7 @@ export const ExpressPackagesPage: React.FC = () => {
             
             idempotencyKeyRef.current = `${user.id}-${pkg.id}-${Date.now()}`;
             setSelectedPackage(pkg);
+            setQuantity(1);
             setPurchaseNote('');
             setPurchaseError(null);
             setPurchasing(false);
@@ -73,6 +75,7 @@ export const ExpressPackagesPage: React.FC = () => {
         idempotencyKeyRef.current = `${user.id}-${pkg.id}-${Date.now()}`;
         
         setSelectedPackage(pkg);
+        setQuantity(1);
         setPurchaseNote('');
         setPurchaseError(null);
         setPurchasing(false);
@@ -81,6 +84,15 @@ export const ExpressPackagesPage: React.FC = () => {
     const handleCloseConfirm = () => {
         if (purchasing) return; // Không cho phép đóng khi đang xử lý thanh toán
         setSelectedPackage(null);
+    };
+
+    const handleUpdateQuantity = (delta: number) => {
+        setQuantity(prev => {
+            const newVal = prev + delta;
+            if (newVal < 1) return 1;
+            if (newVal > 20) return 20; // Giới hạn tối đa 20 gói
+            return newVal;
+        });
     };
 
     const handleConfirmPurchase = async () => {
@@ -94,12 +106,13 @@ export const ExpressPackagesPage: React.FC = () => {
                 customerId: user.id,
                 packageId: selectedPackage.id,
                 packageName: selectedPackage.name,
-                amount: selectedPackage.sellingPrice,
+                amount: selectedPackage.sellingPrice * quantity,
                 customerName: user.name,
-                phone: user.phone || '0987654321', // Fallback phone nếu chưa có
+                phone: user.phone ?? '', // Gửi rỗng thay vì số giả — backend sẽ xử lý
                 note: purchaseNote.trim() || 'Đặt mua từ Zalo Mini App',
                 unitId: selectedPackage.unitId,
-                productId: selectedPackage.productId
+                productId: selectedPackage.productId,
+                quantity: quantity
             });
 
             if (res && res.orderId) {
@@ -236,6 +249,16 @@ export const ExpressPackagesPage: React.FC = () => {
                             </div>
                         )}
 
+                        {/* Cảnh báo khi user chưa có số điện thoại */}
+                        {!user?.phone && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                                <AlertCircle className="text-amber-500 shrink-0 mt-0.5" size={14} />
+                                <p className="text-amber-700 text-xs font-semibold leading-tight">
+                                    Bạn chưa liên kết số điện thoại. Vui lòng cập nhật SĐT trong Hồ sơ để nhân viên có thể liên hệ khi cần.
+                                </p>
+                            </div>
+                        )}
+
                         {/* Package Info Summary */}
                         <div className="bg-brand-cream/30 border border-gray-100 rounded-2xl p-4 flex gap-4">
                             <div className="w-14 h-14 rounded-xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center shrink-0">
@@ -257,6 +280,58 @@ export const ExpressPackagesPage: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* Bộ chọn số lượng */}
+                        <div className="flex items-center justify-between bg-brand-cream/10 border border-gray-100/50 rounded-2xl p-4">
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-brand-dark uppercase tracking-wider text-gray-400">Số lượng mua</span>
+                                <span className="text-[11px] text-gray-400 mt-0.5">Tối đa 20 gói/lần đặt</span>
+                            </div>
+                            <div className="flex items-center gap-3.5 bg-gray-50 border border-gray-100 rounded-xl p-1.5 shrink-0">
+                                <button
+                                    onClick={() => handleUpdateQuantity(-1)}
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-white text-brand-dark shadow-sm hover:bg-gray-100 active:scale-90 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                                    disabled={quantity <= 1 || purchasing}
+                                >
+                                    <Minus size={14} strokeWidth={2.5} />
+                                </button>
+                                <span className="w-8 text-center font-extrabold text-base text-brand-dark select-none">
+                                    {quantity}
+                                </span>
+                                <button
+                                    onClick={() => handleUpdateQuantity(1)}
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center bg-white text-brand-dark shadow-sm hover:bg-gray-100 active:scale-90 transition-all disabled:opacity-50 disabled:pointer-events-none"
+                                    disabled={quantity >= 20 || purchasing}
+                                >
+                                    <Plus size={14} strokeWidth={2.5} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tổng quan thanh toán tạm tính */}
+                        <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-2 border border-gray-100/50">
+                            <div className="flex justify-between items-center text-xs text-gray-500">
+                                <span>Đơn giá</span>
+                                <span>{selectedPackage.sellingPrice.toLocaleString('vi-VN')}đ</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-gray-500">
+                                <span>Số lượng</span>
+                                <span>x {quantity}</span>
+                            </div>
+                            {quantity > 1 && (
+                                <div className="flex justify-between items-center text-xs text-brand-primary font-semibold bg-brand-primary/5 rounded-lg px-2.5 py-1.5">
+                                    <span>Đặc quyền nhận được</span>
+                                    <span>{quantity} mã Voucher 100%</span>
+                                </div>
+                            )}
+                            <div className="h-px bg-gray-200/60 my-1"></div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm font-bold text-brand-dark">Tổng cộng tạm tính</span>
+                                <span className="text-lg font-black text-brand-primary">
+                                    {(selectedPackage.sellingPrice * quantity).toLocaleString('vi-VN')}đ
+                                </span>
+                            </div>
+                        </div>
+
                         {/* Note Input */}
                         <div className="flex flex-col gap-1.5">
                             <label className="text-xs font-bold text-brand-dark uppercase tracking-wider text-gray-400">Ghi chú đơn hàng (Tùy chọn)</label>
@@ -273,7 +348,7 @@ export const ExpressPackagesPage: React.FC = () => {
                         <div className="text-center py-1">
                             <p className="text-[11px] text-gray-400 flex items-center justify-center gap-1">
                                 <Sparkles size={12} className="text-brand-primary animate-pulse" />
-                                Mã Voucher sẽ được gửi trực tiếp qua Zalo OA ngay sau khi hoàn thành.
+                                {quantity > 1 ? `${quantity} mã Voucher` : 'Mã Voucher'} sẽ được gửi trực tiếp qua Zalo OA ngay sau khi hoàn thành.
                             </p>
                         </div>
 
@@ -288,7 +363,7 @@ export const ExpressPackagesPage: React.FC = () => {
                             </button>
                             <button 
                                 onClick={handleConfirmPurchase}
-                                className="flex-1 py-3.5 bg-brand-primary text-white font-extrabold text-sm rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2"
+                                className="flex-[2] py-3.5 bg-brand-primary text-white font-extrabold text-sm rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2"
                                 disabled={purchasing}
                             >
                                 {purchasing ? (
@@ -297,7 +372,7 @@ export const ExpressPackagesPage: React.FC = () => {
                                         Đang tạo đơn...
                                     </>
                                 ) : (
-                                    'Xác nhận mua'
+                                    `Xác nhận - ${(selectedPackage.sellingPrice * quantity).toLocaleString('vi-VN')}đ`
                                 )}
                             </button>
                         </div>

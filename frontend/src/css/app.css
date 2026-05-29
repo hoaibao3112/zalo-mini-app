@@ -27,6 +27,32 @@ html, body {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
+/* Khóa cuộn ngang trang chính, chỉ cho phép pan dọc ở cấp cao */
+#app {
+  overflow-x: hidden;
+  touch-action: pan-y;
+  -ms-touch-action: pan-y;
+  overscroll-behavior-x: none;
+}
+
+/* Cho phép cuộn ngang nội bộ cho các container có class overflow-x-auto
+   và ngăn việc truyền tiếp (scroll chaining) lên cha (page) */
+#app .overflow-x-auto {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  -ms-touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+/* Ngăn ảnh tràn kích thước gây overflow */
+#app img, #app svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
 /* Ẩn scrollbar cho mượt */
 ::-webkit-scrollbar {
     width: 0px;
@@ -41,3 +67,21 @@ html, body {
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+/* Animation utilities used by BottomNav and modals */
+@keyframes homeGlow {
+  0% { transform: scale(1); opacity: 0.28; }
+  50% { transform: scale(1.06); opacity: 0.42; }
+  100% { transform: scale(1); opacity: 0.28; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in { animation: fade-in 260ms cubic-bezier(.2,.9,.2,1) both; }
+.animate-home-glow { animation: homeGlow 2200ms ease-in-out infinite; }
+
+/* small helper to slightly lift the center button on focus/active for tactile feel */
+.center-lift:active { transform: translateY(-2px); }

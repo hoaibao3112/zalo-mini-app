@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { MiniappRequest } from '../types.js';
 import prisma from '../lib/prisma.js';
+import { redis } from '../lib/redis.js';
 import { successResponse, errorResponse } from '../lib/response.helper.js';
 import { getPhoneNumberFromToken, getUserInfoFromToken, ZaloApiClient } from '../lib/zaloApi.js';
 import { authZaloSchema, updatePhoneSchema, updateCustomerSchema } from '../validators/auth.validator.js';
@@ -8,6 +9,20 @@ import { customerMergeService } from '../services/customerMerge.service.js';
 import { verifyCustomerOwnership } from '../middlewares/verifyCustomerOwnership.js';
 import { normalizePhoneNumber } from '../lib/phone.helper.js';
 import { ZodError } from 'zod';
+import { logger } from '../lib/logger.js';
+import { signToken } from '../lib/jwt.js';
+
+type CustomerUpdateData = {
+    name?: string;
+    avatar?: string | null;
+    phone?: string | null;
+    gender?: number | null;
+    birthday?: string | null;
+    address?: string | null;
+    city?: string | null;
+    district?: string | null;
+    ward?: string | null;
+};
 
 const router = Router();
 
@@ -84,7 +99,7 @@ router.post('/customers/auth/zalo', async (req: MiniappRequest, res: Response) =
                     }
                 }
             } catch (oaError) {
-                console.warn('[MiniappAuth] Lỗi lấy thông tin OA profile:', oaError);
+                logger.warn({ correlationId: req.correlationId || '', action: 'OA_PROFILE_FETCH_FAILED' }, 'Lỗi lấy thông tin OA profile:', oaError);
             }
         }
 
@@ -95,7 +110,7 @@ router.post('/customers/auth/zalo', async (req: MiniappRequest, res: Response) =
                 const zaloPhone = await getPhoneNumberFromToken(phoneToken, accessToken);
                 if (zaloPhone) resolvedPhone = normalizePhoneNumber(zaloPhone);
             } catch (e) {
-                console.error('[MiniappAuth] Lỗi lấy SĐT từ token:', e);
+                logger.error({ correlationId: req.correlationId || '', action: 'GET_PHONE_FROM_TOKEN_FAILED' }, 'Lỗi lấy SĐT từ token:', e);
             }
         }
 
@@ -108,7 +123,7 @@ router.post('/customers/auth/zalo', async (req: MiniappRequest, res: Response) =
                     if (userInfo.birthday) extendedInfo.birthday = userInfo.birthday;
                 }
             } catch (e) {
-                console.error('[MiniappAuth] Lỗi lấy user info từ token:', e);
+                logger.error({ correlationId: req.correlationId || '', action: 'GET_USER_INFO_FAILED' }, 'Lỗi lấy user info từ token:', e);
             }
         }
 
@@ -121,7 +136,7 @@ router.post('/customers/auth/zalo', async (req: MiniappRequest, res: Response) =
             where: { accountId_zaloId: { accountId, zaloId } },
         });
 
-        const updateData: any = { name, avatar: avatar || null };
+        const updateData: CustomerUpdateData = { name, avatar: avatar || null };
         if (resolvedPhone) updateData.phone = resolvedPhone;
         if (extendedInfo.phone && !resolvedPhone) updateData.phone = extendedInfo.phone;
         if (extendedInfo.gender !== undefined) updateData.gender = extendedInfo.gender;
@@ -147,24 +162,32 @@ router.post('/customers/auth/zalo', async (req: MiniappRequest, res: Response) =
             });
         }
 
-        // Nếu frontend gửi accessToken, đặt httpOnly cookie để frontend không cần lưu token trên localStorage
-        if (accessToken) {
-            const isProd = process.env.NODE_ENV === 'production';
-            res.cookie('zalo_access_token', accessToken, {
-                httpOnly: true,
-                secure: isProd,
-                sameSite: 'lax',
-                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
-                path: '/'
-            });
-        }
+        // [PATCH-002] Ký JWT nội bộ và set httpOnly cookie access_token
+        const jwt = await signToken({ customerId: customer.id, accountId });
+        res.cookie('access_token', jwt, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/'
+        });
 
-        return res.json(successResponse(customer, 'Xác thực thành công'));
-    } catch (error: any) {
+        return res.json({
+            success: true,
+            data: {
+                customer: {
+                    id: customer.id,
+                    name: customer.name,
+                    phone: customer.phone,
+                    zaloId: customer.zaloId
+                }
+            }
+        });
+    } catch (error: unknown) {
         if (error instanceof ZodError) {
             return res.status(400).json(errorResponse('VALIDATION_ERROR', error.issues[0]?.message));
         }
-        console.error('[MiniappAuth] Lỗi đăng nhập Zalo:', error);
+        logger.error({ correlationId: req.correlationId || '', action: 'AUTH_ZALO_FAILED' }, 'Lỗi đăng nhập Zalo:', error);
         return res.status(500).json(errorResponse('AUTH_FAILED', 'Lỗi xác thực thông tin Zalo'));
     }
 });
@@ -195,7 +218,8 @@ router.post('/customers/phone/update', verifyCustomerOwnership, async (req: Mini
         // Chuẩn hóa số điện thoại trước khi gộp
         phoneNumber = normalizePhoneNumber(phoneNumber);
 
-        const updateData: any = { phone: phoneNumber };
+        const updateData: CustomerUpdateData = {};
+        if (phoneNumber) updateData.phone = phoneNumber;
         if (accessToken && !(token === 'mock-phone-token-test' || token.startsWith('mock-'))) {
             try {
                 const userInfo = await getUserInfoFromToken(accessToken);
@@ -214,6 +238,22 @@ router.post('/customers/phone/update', verifyCustomerOwnership, async (req: Mini
         }
 
         if (mergeResult.merged) {
+            const primaryId = mergeResult.primaryCustomer!.id;
+            const zaloId = req.zaloId;
+
+            // Xóa cache Redis để tránh cache dữ liệu cũ của customer bị gộp/xóa (M4 / Cache Invalidation)
+            try {
+                const keysToDel = [
+                    `customer:${userId}:workspace:${req.workspaceId}`,
+                    `customer:${primaryId}:workspace:${req.workspaceId}`,
+                    `zalo_mini_app:token_map:${req.workspaceId}:${zaloId}`
+                ];
+                await Promise.all(keysToDel.map(key => redis.del(key)));
+                logger.info({ correlationId: req.correlationId || '', action: 'CACHE_INVALIDATE_MERGED' }, 'Đã xóa cache Redis cho customer gộp thành công');
+            } catch (cacheErr) {
+                logger.warn({ correlationId: req.correlationId || '', action: 'CACHE_INVALIDATE_MERGED_FAILED' }, 'Lỗi xóa cache khi gộp tài khoản:', cacheErr);
+            }
+
             return res.json(successResponse({
                 phone: phoneNumber,
                 customer: mergeResult.primaryCustomer,
@@ -227,16 +267,21 @@ router.post('/customers/phone/update', verifyCustomerOwnership, async (req: Mini
             data: updateData,
         });
 
+        // Xóa cache Redis của customer vừa được cập nhật trực tiếp SĐT
+        try {
+            await redis.del(`customer:${userId}:workspace:${req.workspaceId}`);
+        } catch (cacheErr) { /* Non-blocking */ }
+
         return res.json(successResponse({
             phone: phoneNumber,
             customer,
             merged: false
         }, 'Cập nhật số điện thoại thành công'));
-    } catch (error: any) {
+    } catch (error: unknown) {
         if (error instanceof ZodError) {
             return res.status(400).json(errorResponse('VALIDATION_ERROR', error.issues[0]?.message));
         }
-        console.error('[MiniappAuth] Lỗi cập nhật số điện thoại:', error);
+        logger.error({ correlationId: req.correlationId || '', action: 'PHONE_UPDATE_FAILED' }, 'Lỗi cập nhật số điện thoại:', error);
         return res.status(500).json(errorResponse('PHONE_UPDATE_FAILED', 'Lỗi cập nhật số điện thoại'));
     }
 });
@@ -247,16 +292,21 @@ router.post('/customers/phone/update', verifyCustomerOwnership, async (req: Mini
  */
 router.put('/customers/:customerId', verifyCustomerOwnership, async (req: MiniappRequest, res: Response) => {
     try {
-        console.log('[MiniappAuth] PUT /customers/:customerId - Body:', req.body);
-        // Validate dữ liệu đầu vào bằng Zod
-        const validatedData = updateCustomerSchema.parse(req.body);
         const userId = req.customer!.id;
         const accountId = req.workspaceId!;
+        logger.info({ correlationId: req.correlationId || '', workspaceId: accountId, action: 'CUSTOMER_UPDATE_MANUAL_REQUEST' }, 'Cập nhật thông tin khách hàng thủ công');
+        // Validate dữ liệu đầu vào bằng Zod
+        const validatedData = updateCustomerSchema.parse(req.body);
 
-        const { phone, gender, birthday } = validatedData;
-        const updateData: any = {};
+        const { phone, gender, birthday, name, address, city, district, ward } = validatedData;
+        const updateData: CustomerUpdateData = {};
         if (gender !== undefined) updateData.gender = gender;
         if (birthday !== undefined) updateData.birthday = birthday;
+        if (name !== undefined && name !== null) updateData.name = name;
+        if (address !== undefined) updateData.address = address;
+        if (city !== undefined) updateData.city = city;
+        if (district !== undefined) updateData.district = district;
+        if (ward !== undefined) updateData.ward = ward;
 
         // Nếu có cập nhật số điện thoại thủ công, tiến hành gộp tài khoản thông minh
         if (phone) {
@@ -267,11 +317,16 @@ router.put('/customers/:customerId', verifyCustomerOwnership, async (req: Miniap
             }
 
             if (mergeResult.merged && mergeResult.primaryCustomer) {
-                // Nếu đã gộp tài khoản, cập nhật thêm gender/birthday lên tài khoản chính
+                // Nếu đã gộp tài khoản, cập nhật thêm các trường thông tin lên tài khoản chính
                 const primaryId = mergeResult.primaryCustomer.id;
-                const finalUpdate: any = {};
+                const finalUpdate: CustomerUpdateData = {};
                 if (gender !== undefined) finalUpdate.gender = gender;
                 if (birthday !== undefined) finalUpdate.birthday = birthday;
+                if (name !== undefined && name !== null) finalUpdate.name = name;
+                if (address !== undefined) finalUpdate.address = address;
+                if (city !== undefined) finalUpdate.city = city;
+                if (district !== undefined) finalUpdate.district = district;
+                if (ward !== undefined) finalUpdate.ward = ward;
 
                 let finalCustomer = mergeResult.primaryCustomer;
                 if (Object.keys(finalUpdate).length > 0) {
@@ -280,6 +335,16 @@ router.put('/customers/:customerId', verifyCustomerOwnership, async (req: Miniap
                         data: finalUpdate
                     });
                 }
+
+                // Xóa cache Redis để tránh cache dữ liệu cũ của customer bị gộp/xóa (M4 / Cache Invalidation)
+                try {
+                    const keysToDel = [
+                        `customer:${userId}:workspace:${accountId}`,
+                        `customer:${primaryId}:workspace:${accountId}`,
+                        `zalo_mini_app:token_map:${accountId}:${req.zaloId}`
+                    ];
+                    await Promise.all(keysToDel.map(key => redis.del(key)));
+                } catch (cacheErr) { /* Non-blocking */ }
 
                 return res.json(successResponse({
                     customer: finalCustomer,
@@ -297,16 +362,21 @@ router.put('/customers/:customerId', verifyCustomerOwnership, async (req: Miniap
             data: updateData,
         });
 
+        // Xóa cache Redis của customer vừa được cập nhật trực tiếp
+        try {
+            await redis.del(`customer:${userId}:workspace:${accountId}`);
+        } catch (cacheErr) { /* Non-blocking */ }
+
         return res.json(successResponse({
             customer,
             merged: false
         }, 'Cập nhật thông tin thành công'));
-    } catch (error: any) {
+    } catch (error: unknown) {
         if (error instanceof ZodError) {
-            console.warn('[MiniappAuth] Validation Error:', error.issues);
+            logger.warn({ correlationId: req.correlationId || '', action: 'CUSTOMER_UPDATE_VALIDATION' }, 'Validation Error:', error.issues);
             return res.status(400).json(errorResponse('VALIDATION_ERROR', error.issues[0]?.message));
         }
-        console.error('[MiniappAuth] Lỗi cập nhật thông tin khách hàng thủ công:', error);
+        logger.error({ correlationId: req.correlationId || '', action: 'CUSTOMER_UPDATE_FAILED' }, 'Lỗi cập nhật thông tin khách hàng thủ công:', error);
         return res.status(500).json(errorResponse('CUSTOMER_UPDATE_FAILED', 'Lỗi cập nhật thông tin khách hàng'));
     }
 });
@@ -317,12 +387,21 @@ router.put('/customers/:customerId', verifyCustomerOwnership, async (req: Miniap
  */
 router.post('/customers/logout', (req: MiniappRequest, res: Response) => {
     try {
+        res.clearCookie('access_token', { path: '/' });
         res.clearCookie('zalo_access_token', { path: '/' });
         return res.json(successResponse(null, 'Đã đăng xuất'));
     } catch (err) {
-        console.warn('[MiniappAuth] Logout error', err);
+        logger.warn({ correlationId: req.correlationId || '', action: 'LOGOUT_FAILED' }, 'Lỗi đăng xuất:', err);
         return res.status(500).json(errorResponse('LOGOUT_FAILED', 'Không thể đăng xuất'));
     }
+});
+
+/**
+ * [PATCH-002] POST /auth/logout
+ */
+router.post('/auth/logout', (req, res) => {
+    res.clearCookie('access_token', { path: '/' });
+    return res.json({ success: true, message: 'Đã đăng xuất' });
 });
 
 export default router;
